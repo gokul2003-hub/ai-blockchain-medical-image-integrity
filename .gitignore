@@ -1,0 +1,42 @@
+# Local secrets and generated health data
+.env
+.env.*
+!.env.example
+.dev-secrets.json
+backend/.dev-secrets.json
+backend/medical_sharing.db
+backend/storage/
+backend/venv/
+backend/.pytest_cache/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Hardhat build artifacts (compiled from source on demand)
+blockchain/node_modules/
+blockchain/artifacts/
+blockchain/cache/
+blockchain/deployment.json
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Large archives / zips
+*.zip
+*.tar.gz
+*.rar
+

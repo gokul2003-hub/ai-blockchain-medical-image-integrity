@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: medchain_db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-medical_sharing}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - medchain_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: medchain_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - medchain_network
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medchain_api
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/medical_sharing}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - MASTER_KEY=${MASTER_KEY}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - BLOCKCHAIN_PROVIDER=${BLOCKCHAIN_PROVIDER:-development}
+      - MFA_TEST_MODE=${MFA_TEST_MODE:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/code
+    networks:
+      - medchain_network
+
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medchain_celery
+    command: celery -A app.celery_worker.celery_app worker --loglevel=info
+    environment:
+      - APP_ENV=${APP_ENV:-development}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/medical_sharing}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - MASTER_KEY=${MASTER_KEY}
+      - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
+      - BLOCKCHAIN_PROVIDER=${BLOCKCHAIN_PROVIDER:-development}
+    depends_on:
+      - db
+      - redis
+      - api
+    volumes:
+      - ./backend:/code
+    networks:
+      - medchain_network
+
+  frontend:
+    image: node:20-alpine
+    container_name: medchain_frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - api
+    networks:
+      - medchain_network
+
+networks:
+  medchain_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
