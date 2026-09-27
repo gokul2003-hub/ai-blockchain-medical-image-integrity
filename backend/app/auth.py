@@ -25,7 +25,7 @@ from app.database import get_db
 from app.models import AuthSession, MfaCredential, User, UserSecurityState
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt", "pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 SAFE_PUBLIC_ROLE = "patient"
 PRIVILEGED_ROLES = {"super_admin", "hospital_admin", "doctor", "radiologist", "researcher"}

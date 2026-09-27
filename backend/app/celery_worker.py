@@ -21,18 +21,35 @@ celery_app.conf.update(
 )
 
 @celery_app.task(name="app.celery_worker.run_ai_tamper_localization")
-def run_ai_tamper_localization(image_bytes_hex: str, output_filename: str):
+def run_ai_tamper_localization(image_id: int, output_filename: str):
     """
     Background Celery task to run U-Net model and localize image tampering.
-    Converts image_bytes back from hex string.
+    Retrieves and decrypts the specific encrypted image inside the worker.
+    Plain medical-image bytes are deliberately not serialized into the Celery
+    broker message.
     """
     logger.info(f"Starting background AI tamper localization for {output_filename}")
     from app.ai_model import localize_tampering
     
-    # Convert hex string back to bytes
-    image_bytes = bytes.fromhex(image_bytes_hex)
-    
     try:
+        from app.crypto import decrypt_image, sha3_hash
+        from app.database import SessionLocal
+        from app.models import MedicalImage
+        from app.storage_provider import load_encrypted_object
+
+        db = SessionLocal()
+        try:
+            image = db.get(MedicalImage, image_id)
+            if not image:
+                raise ValueError(f"Medical image {image_id} was not found")
+            encrypted_bytes = load_encrypted_object(image.file_path)
+            if sha3_hash(encrypted_bytes) != image.encrypted_hash:
+                raise ValueError("Ciphertext integrity hash mismatch")
+            image_bytes = decrypt_image(
+                encrypted_bytes, image.original_hash, image.encryption_key_metadata
+            )
+        finally:
+            db.close()
         tampered_pct, confidence, bboxes, heatmap_path = localize_tampering(image_bytes, output_filename)
         logger.info(f"Tamper localization completed: {tampered_pct}% tampered, confidence: {confidence}")
         return {

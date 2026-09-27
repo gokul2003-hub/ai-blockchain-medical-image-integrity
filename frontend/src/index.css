@@ -124,3 +124,30 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   outline: 2px solid #3b82f6 !important;
   outline-offset: 2px !important;
 }
+
+/* Toast slide-in animation */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(100%); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-slide-in { animation: slide-in 0.25s ease-out; }
+
+/* Extra glow utilities */
+.glow-amber { box-shadow: 0 0 15px -3px rgba(245, 158, 11, 0.35); }
+.glow-cyan  { box-shadow: 0 0 15px -3px rgba(6, 182, 212, 0.3); }
+
+/* Hash/code display */
+.font-hash {
+  font-family: 'Space Grotesk', monospace;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* KPI accent borders */
+.kpi-total     { border-top: 2px solid rgba(59,130,246,0.5); }
+.kpi-verified  { border-top: 2px solid rgba(16,185,129,0.5); }
+.kpi-tampered  { border-top: 2px solid rgba(239,68,68,0.5); }
+.kpi-recovered { border-top: 2px solid rgba(6,182,212,0.5); }
+.kpi-quarantine{ border-top: 2px solid rgba(245,158,11,0.5); }
+.kpi-blockchain{ border-top: 2px solid rgba(139,92,246,0.5); }
+

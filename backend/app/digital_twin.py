@@ -13,7 +13,8 @@ def create_digital_twin(
     ipfs_cid: str,
     owner_id: int,
     metadata_dict: dict,
-    provenance_info: dict
+    provenance_info: dict,
+    commit: bool = True,
 ) -> DigitalIntegrityTwin:
     """
     Creates a new Digital Integrity Twin record for a registered medical image.
@@ -48,7 +49,10 @@ def create_digital_twin(
     )
     
     db.add(twin)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(twin)
     logger.info(f"Digital Integrity Twin created successfully (ID: {twin.id}).")
     return twin

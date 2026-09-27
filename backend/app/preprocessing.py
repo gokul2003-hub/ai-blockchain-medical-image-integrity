@@ -1,10 +1,12 @@
 import io
 import math
 import hashlib
+import hmac
 import datetime
 import cv2
 import numpy as np
 from loguru import logger
+from app.config import settings
 
 try:
     import pydicom
@@ -135,8 +137,17 @@ def deidentify_dicom_dataset(dataset, profile: str = "safe_harbor") -> dict:
     Removes direct patient identifiers while preserving essential clinical imaging parameters.
     Returns: Safe, authorized metadata dictionary.
     """
-    # 1. Pseudonymize or remove direct patient identifiers
-    patient_hash = hashlib.sha256(str(getattr(dataset, "PatientID", "ANON")).encode()).hexdigest()[:10]
+    # The original DICOM object is not persisted by this application (only a
+    # rendered PNG is). This function builds the persistable metadata
+    # allow-list, so it must not return source UIDs or dates.
+    def _pseudonym(value: str, label: str) -> str:
+        digest = hmac.new(
+            settings.master_key_b64.encode(), f"{label}:{value}".encode(), hashlib.sha256
+        ).digest()[:16]
+        return str(int.from_bytes(digest, "big"))
+
+    # 1. Pseudonymize or remove direct patient identifiers.
+    patient_hash = _pseudonym(str(getattr(dataset, "PatientID", "ANON")), "patient")[:10]
     safe_patient_id = f"PAT-ANON-{patient_hash.upper()}"
     dataset.PatientName = "ANONYMOUS^PATIENT"
     dataset.PatientID = safe_patient_id
@@ -155,13 +166,13 @@ def deidentify_dicom_dataset(dataset, profile: str = "safe_harbor") -> dict:
     except Exception:
         pass
 
-    # 3. Extract and preserve authorized structural metadata
+    # 3. Extract a minimal, non-identifying structural metadata allow-list.
     modality = str(getattr(dataset, "Modality", "MRI")).upper()
-    study_uid = str(getattr(dataset, "StudyInstanceUID", f"1.2.826.0.1.{patient_hash}.1"))
-    series_uid = str(getattr(dataset, "SeriesInstanceUID", f"1.2.826.0.1.{patient_hash}.2"))
-    sop_uid = str(getattr(dataset, "SOPInstanceUID", f"1.2.826.0.1.{patient_hash}.3"))
-    study_date = str(getattr(dataset, "StudyDate", datetime.date.today().strftime("%Y%m%d")))
-    manufacturer = str(getattr(dataset, "Manufacturer", "CLINICAL_IMAGING_SYSTEM"))
+    # 2.25.<decimal UUID> is a valid DICOM UID root. These deterministic
+    # pseudonyms preserve internal linkage without retaining source UIDs.
+    study_uid = f"2.25.{_pseudonym(str(getattr(dataset, 'StudyInstanceUID', '')), 'study')}"
+    series_uid = f"2.25.{_pseudonym(str(getattr(dataset, 'SeriesInstanceUID', '')), 'series')}"
+    sop_uid = f"2.25.{_pseudonym(str(getattr(dataset, 'SOPInstanceUID', '')), 'sop')}"
 
     safe_metadata = {
         "deidentified": True,
@@ -172,12 +183,37 @@ def deidentify_dicom_dataset(dataset, profile: str = "safe_harbor") -> dict:
         "study_instance_uid": study_uid,
         "series_instance_uid": series_uid,
         "sop_instance_uid": sop_uid,
-        "study_date": study_date,
-        "manufacturer": manufacturer,
+        "study_date": None,
+        "manufacturer": None,
         "rows": int(getattr(dataset, "Rows", 512)),
         "columns": int(getattr(dataset, "Columns", 512)),
     }
     return safe_metadata
+
+
+def _grayscale_dicom_frame(pixel_array: np.ndarray) -> np.ndarray:
+    """Reduce DICOM pixel_array to a single 2D grayscale frame for PNG rendering."""
+    arr = np.asarray(pixel_array)
+    if arr.size == 0:
+        raise ValueError("DICOM pixel array is empty")
+
+    if arr.ndim == 4:
+        arr = arr[0]
+    if arr.ndim == 3 and arr.shape[-1] in (3, 4):
+        frame = arr[..., :3]
+        if frame.dtype != np.uint8:
+            fmin, fmax = float(frame.min()), float(frame.max())
+            if fmax > fmin:
+                frame = ((frame - fmin) / (fmax - fmin) * 255.0).astype(np.uint8)
+            else:
+                frame = np.zeros(frame.shape[:2] + (3,), dtype=np.uint8)
+        return cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY).astype(np.float64)
+    if arr.ndim == 3:
+        # Multi-frame / volumetric grayscale: use the first slice only.
+        arr = arr[0]
+    if arr.ndim != 2:
+        raise ValueError(f"Unsupported DICOM pixel array shape: {pixel_array.shape}")
+    return arr.astype(np.float64)
 
 
 def preprocess_dicom_image(file_bytes: bytes) -> tuple[bytes, dict, float, float]:
@@ -187,67 +223,51 @@ def preprocess_dicom_image(file_bytes: bytes) -> tuple[bytes, dict, float, float
     Returns: (preprocessed_png_bytes, safe_metadata_dict, quality_score, entropy)
     """
     if not PYDICOM_AVAILABLE:
-        logger.warning("pydicom library not found. Falling back to standard image preprocessing.")
-        png_bytes, q_score, ent = preprocess_medical_image(file_bytes)
-        return png_bytes, {"patient_name": "ANONYMOUS_PATIENT", "modality": "MRI"}, q_score, ent
+        raise ValueError("DICOM processing is unavailable because pydicom is not installed")
 
     logger.info("Initializing clinical DICOM parsing and de-identification engine...")
     try:
-        dataset = pydicom.dcmread(io.BytesIO(file_bytes), force=True)
-        if not hasattr(dataset, "file_meta") or dataset.file_meta is None:
-            dataset.file_meta = Dataset()
-
-        # Extract and de-identify metadata
-        safe_meta = deidentify_dicom_dataset(dataset)
-
-        # Extract pixel data
-        if not hasattr(dataset, "pixel_array"):
-            raise ValueError("DICOM file contains no readable pixel array")
-
-        pixel_array = dataset.pixel_array.astype(np.float64)
-
-        # Handle RescaleSlope and RescaleIntercept if present (CT Hounsfield units)
-        slope = float(getattr(dataset, "RescaleSlope", 1.0))
-        intercept = float(getattr(dataset, "RescaleIntercept", 0.0))
-        pixel_array = pixel_array * slope + intercept
-
-        # Handle MONOCHROME1 (inverted grayscale where 0 is white)
-        photometric = getattr(dataset, "PhotometricInterpretation", "MONOCHROME2")
-        if photometric == "MONOCHROME1":
-            pixel_array = np.amax(pixel_array) - pixel_array
-
-        # Normalize pixel values to 0-255 uint8
-        p_min, p_max = pixel_array.min(), pixel_array.max()
-        if p_max > p_min:
-            normalized_array = ((pixel_array - p_min) / (p_max - p_min) * 255.0).astype(np.uint8)
-        else:
-            normalized_array = np.zeros(pixel_array.shape, dtype=np.uint8)
-
-        # Enhance with median filter and CLAHE
-        denoised = cv2.medianBlur(normalized_array, 3)
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        enhanced = clahe.apply(denoised)
-
-        # Resize to standard 512x512
-        resized = cv2.resize(enhanced, (512, 512), interpolation=cv2.INTER_CUBIC)
-        norm_512 = cv2.normalize(resized, None, 0, 255, cv2.NORM_MINMAX)
-
-        quality_score = calculate_quality_score(norm_512)
-        entropy = calculate_entropy(norm_512)
-
-        _, encoded_img = cv2.imencode(".png", norm_512)
-        logger.info(f"DICOM parsing & de-identification completed. Modality: {safe_meta['modality']}, Quality: {quality_score}")
-        return encoded_img.tobytes(), safe_meta, quality_score, entropy
-
+        dataset = pydicom.dcmread(io.BytesIO(file_bytes), force=False)
     except Exception as e:
-        logger.warning(f"DICOM parsing failed: {str(e)}. Falling back to standard image decoding.")
-        png_bytes, q_score, ent = preprocess_medical_image(file_bytes)
-        fallback_meta = {
-            "deidentified": True,
-            "patient_name": "ANONYMOUS_PATIENT",
-            "modality": "MRI",
-            "study_instance_uid": "1.2.826.0.1.fallback.study",
-            "series_instance_uid": "1.2.826.0.1.fallback.series",
-            "study_date": datetime.date.today().strftime("%Y%m%d")
-        }
-        return png_bytes, fallback_meta, q_score, ent
+        raise ValueError(f"Invalid or unreadable DICOM file: {e}") from e
+
+    if getattr(dataset, "file_meta", None) is None:
+        dataset.file_meta = Dataset()
+
+    safe_meta = deidentify_dicom_dataset(dataset)
+
+    try:
+        pixel_array = dataset.pixel_array
+    except Exception as e:
+        raise ValueError("DICOM file contains no readable pixel array") from e
+
+    pixel_array = _grayscale_dicom_frame(pixel_array)
+
+    slope = float(getattr(dataset, "RescaleSlope", 1.0))
+    intercept = float(getattr(dataset, "RescaleIntercept", 0.0))
+    pixel_array = pixel_array * slope + intercept
+
+    photometric = str(getattr(dataset, "PhotometricInterpretation", "MONOCHROME2"))
+    if photometric == "MONOCHROME1":
+        pixel_array = np.amax(pixel_array) - pixel_array
+
+    p_min, p_max = float(pixel_array.min()), float(pixel_array.max())
+    if p_max > p_min:
+        normalized_array = ((pixel_array - p_min) / (p_max - p_min) * 255.0).astype(np.uint8)
+    else:
+        normalized_array = np.zeros(pixel_array.shape, dtype=np.uint8)
+
+    denoised = cv2.medianBlur(normalized_array, 3)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    enhanced = clahe.apply(denoised)
+    resized = cv2.resize(enhanced, (512, 512), interpolation=cv2.INTER_CUBIC)
+    norm_512 = cv2.normalize(resized, None, 0, 255, cv2.NORM_MINMAX)
+
+    quality_score = calculate_quality_score(norm_512)
+    entropy = calculate_entropy(norm_512)
+
+    _, encoded_img = cv2.imencode(".png", norm_512)
+    logger.info(
+        f"DICOM parsing & de-identification completed. Modality: {safe_meta['modality']}, Quality: {quality_score}"
+    )
+    return encoded_img.tobytes(), safe_meta, quality_score, entropy

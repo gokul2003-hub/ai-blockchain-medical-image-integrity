@@ -233,6 +233,19 @@ async def revoke_permission(
 
     if perm.is_active:
         perm.is_active = False
+        # Also revoke any associated ConsentGrant for this patient and doctor pair
+        doc_prof = db.query(DoctorProfile).filter(DoctorProfile.id == perm.doctor_id).first() if perm.doctor_id else None
+        target_uid = doc_prof.user_id if doc_prof else perm.doctor_id
+        if target_uid:
+            now_utc = datetime.now(timezone.utc)
+            associated_grants = db.query(ConsentGrant).filter(
+                ConsentGrant.patient_id == perm.patient_id,
+                ConsentGrant.recipient_user_id == target_uid,
+                ConsentGrant.revoked_at.is_(None)
+            ).all()
+            for g in associated_grants:
+                g.revoked_at = now_utc
+
         blockchain_service.record_permission_revoke(
             db, perm.patient_id, perm.doctor_id, perm.hospital_id
         )

@@ -270,7 +270,7 @@ class LocalSimulatedBlockchain:
         guess_hash = hashlib.sha3_256(guess).hexdigest()
         return guess_hash[:4] == "0000"
 
-    def write_transaction(self, db: Session, tx_type: str, payload: dict) -> str:
+    def write_transaction(self, db: Session, tx_type: str, payload: dict, commit: bool = True) -> str:
         last_block = self.get_last_block(db)
         
         if last_block is None:
@@ -309,7 +309,10 @@ class LocalSimulatedBlockchain:
             timestamp=datetime.datetime.now(datetime.timezone.utc)
         )
         db.add(db_tx)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(db_tx)
         return block_hash
 
@@ -414,7 +417,10 @@ class BlockchainService:
         logger.info(f"Smart contract transaction succeeded. Gas used: {receipt.gasUsed}. Block: {receipt.blockNumber}")
         return tx_hash.hex()
 
-    def record_upload(self, db: Session, image_id: int, image_hash: str, ipfs_cid: str, patient_id: int, uploader_id: int) -> str:
+    def record_upload(
+        self, db: Session, image_id: int, image_hash: str, ipfs_cid: str,
+        patient_id: int, uploader_id: int, commit: bool = True,
+    ) -> str:
         """Registers a new medical image on-chain using only the IPFS CID."""
         payload = {
             "image_id": image_id,
@@ -433,12 +439,12 @@ class BlockchainService:
                     ipfs_cid,
                     patient_id
                 )
-                self.local_chain.write_transaction(db, "UPLOAD", payload)
+                self.local_chain.write_transaction(db, "UPLOAD", payload, commit=commit)
                 return tx_hash
             except Exception as e:
                 logger.error(f"Failed to record upload on-chain: {str(e)}. Falling back to simulation.")
                 
-        return self.local_chain.write_transaction(db, "UPLOAD", payload)
+        return self.local_chain.write_transaction(db, "UPLOAD", payload, commit=commit)
 
     def record_verification(self, db: Session, image_id: int, status: str, details: dict) -> str:
         """Logs verification events on-chain."""

@@ -17,7 +17,7 @@ This capstone project designs, engineers, and rigorously validates an enterprise
 
 Comprehensive automated testing across 43 unit, integration, and security test suites validates 100% test passage, zero fabricated metrics, sub-second encryption/decryption throughput, and complete mitigation of Broken Object Level Authorization (BOLA), role escalation, and ciphertext tampering vulnerabilities.
 
-**Keywords:** Medical Image Security, Chaos Cryptography, AES-256-GCM, DICOM De-Identification, Swin-UNet, Spatial Rich Model (SRM), Digital Integrity Twin, Blockchain Audit, Self-Recovery, HIPAA Compliance.
+**Keywords:** Medical Image Security, Chaos Cryptography, AES-256-GCM, DICOM De-Identification, Swin-UNet, Spatial Rich Model (SRM), Digital Integrity Twin, Blockchain Audit, Self-Recovery, HIPAA Safe Harbor De-Identification.
 
 ---
 
@@ -176,7 +176,7 @@ The entire platform was subjected to comprehensive automated testing via `pytest
 ## 5. CONCLUSION & FUTURE WORK
 
 ### 5.1 Conclusion
-This project successfully designed, implemented, and validated a comprehensive, enterprise-ready platform for secure medical image sharing and automated integrity verification. By combining adaptive hyperchaotic permutations, AES-256-GCM envelope encryption, HIPAA Safe Harbor DICOM preprocessing, Spatial Rich Model noise residuals, Swin-UNet deep learning forensics, immutable blockchain audit ledgers, and automated region-level self-recovery, the platform solves the twin challenges of healthcare privacy and clinical safety. The platform achieves 100% automated test coverage across 43 critical test scenarios, proving its resilience against eavesdropping, unauthorized traversal, and adversarial tampering.
+This project successfully designed, implemented, and validated a comprehensive prototype research platform for secure medical image sharing and automated integrity verification. By combining adaptive hyperchaotic permutations, AES-256-GCM envelope encryption, HIPAA Safe Harbor DICOM preprocessing, Spatial Rich Model noise residuals, Swin-UNet deep learning forensics, immutable blockchain audit ledgers, and automated region-level self-recovery, the platform solves the twin challenges of healthcare privacy and clinical safety. The platform achieves 100% automated test coverage across 43 critical test scenarios, proving its resilience against eavesdropping, unauthorized traversal, and adversarial tampering.
 
 ### 5.2 Future Extensions
 - **Multi-Modal Federated Learning:** Distributing the Swin-UNet tamper localization training across institutional nodes without pooling raw imaging data.

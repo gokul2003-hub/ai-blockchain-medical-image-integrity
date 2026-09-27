@@ -1,16 +1,35 @@
 import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { ShieldCheck, Users, Upload, RefreshCw, FileCode2, Settings, Building2, Server } from "lucide-react";
+
+import { apiClient } from "./services/api";
+import { ToastProvider } from "./components/Toast";
 import Login from "./views/Login";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 
-// Dashboard Views
-import SuperAdminDashboard from "./views/SuperAdminDashboard";
-import DoctorDashboard from "./views/DoctorDashboard";
+// Legacy Views (for Patient mostly, or fallback)
 import PatientDashboard from "./views/PatientDashboard";
+import SuperAdminDashboard from "./views/SuperAdminDashboard";
 
-// Icons for fallback screens
-import { ShieldCheck, Users, Upload, RefreshCw } from "lucide-react";
-import axios from "axios";
+// New Core Redesign Views
+import Dashboard from "./views/Dashboard";
+import MedicalImages from "./views/MedicalImages";
+import UploadImage from "./views/UploadImage";
+import ImageViewer from "./views/ImageViewer";
+import IntegrityVerification from "./views/IntegrityVerification";
+import AIForensics from "./views/AIForensics";
+import TamperLocalization from "./views/TamperLocalization";
+import ExplainableAI from "./views/ExplainableAI";
+import RecoveryCenter from "./views/RecoveryCenter";
+import RecoveryHistory from "./views/RecoveryHistory";
+import BlockchainAudit from "./views/BlockchainAudit";
+import AccessControl from "./views/AccessControl";
+import ConsentManagement from "./views/ConsentManagement";
+import BreakGlassAccess from "./views/BreakGlassAccess";
+import SecurityEvents from "./views/SecurityEvents";
+import Analytics from "./views/Analytics";
+import DicomInfo from "./views/DicomInfo";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("med_token"));
@@ -18,35 +37,53 @@ export default function App() {
   const [role, setRole] = useState<string | null>(localStorage.getItem("med_role"));
   const [activeView, setActiveView] = useState("dashboard");
   const [darkMode, setDarkMode] = useState<boolean>(true);
+  
+  // Shared state across views
+  const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
 
   // Keep track of alerts
   const [alertsCount, setAlertsCount] = useState(0);
 
   useEffect(() => {
-    // 1. Setup Axios response interceptor for 401 Unauthorized handling
-    const interceptor = axios.interceptors.response.use(
+    // Setup 401 Unauthorized handling on apiClient and axios
+    const handleAuthExpired = () => {
+      console.warn("Authentication error (401 Unauthorized). Evicting session token.");
+      handleLogout();
+    };
+
+    window.addEventListener("auth:unauthorized", handleAuthExpired);
+
+    const clientInterceptor = apiClient.interceptors.response.use(
       (response) => response,
       (error) => {
         if (error.response && error.response.status === 401) {
-          console.warn("Authentication error (401 Unauthorized). Evicting session token.");
-          handleLogout();
+          handleAuthExpired();
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    const axiosInterceptor = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response && error.response.status === 401) {
+          handleAuthExpired();
         }
         return Promise.reject(error);
       }
     );
 
     return () => {
-      axios.interceptors.response.eject(interceptor);
+      window.removeEventListener("auth:unauthorized", handleAuthExpired);
+      apiClient.interceptors.response.eject(clientInterceptor);
+      axios.interceptors.response.eject(axiosInterceptor);
     };
   }, []);
 
   useEffect(() => {
     if (token) {
-      // Validate stored token against backend /api/users/me
       axios
-        .get(`${getBackendUrl()}/api/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        .get(`${getBackendUrl()}/api/users/me`, { headers: { Authorization: `Bearer ${token}` } })
         .then((res) => {
           if (res.data.username && res.data.username !== username) {
             setUsername(res.data.username);
@@ -57,23 +94,15 @@ export default function App() {
             localStorage.setItem("med_role", res.data.role);
           }
         })
-        .catch((err) => {
-          if (err.response?.status === 401) {
-            handleLogout();
-          }
-        });
+        .catch((err) => { if (err.response?.status === 401) handleLogout(); });
     }
   }, [token]);
 
   useEffect(() => {
-    if (token && role === "super_admin") {
-      pollAlerts();
-    }
+    if (token && role === "super_admin") { pollAlerts(); }
   }, [token, role]);
 
-  const getBackendUrl = () => {
-    return import.meta.env.VITE_API_URL || "http://localhost:8000";
-  };
+  const getBackendUrl = () => import.meta.env.VITE_API_URL || "http://localhost:8000";
 
   const pollAlerts = async () => {
     try {
@@ -84,16 +113,13 @@ export default function App() {
         const count = response.data.filter((b: any) => b.type === "TAMPER_ALERT").length;
         setAlertsCount(count);
       }
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   };
 
   const handleLoginSuccess = (accessToken: string, user: string, userRole: string) => {
     localStorage.setItem("med_token", accessToken);
     localStorage.setItem("med_username", user);
     localStorage.setItem("med_role", userRole);
-    
     setToken(accessToken);
     setUsername(user);
     setRole(userRole);
@@ -104,106 +130,129 @@ export default function App() {
     localStorage.removeItem("med_token");
     localStorage.removeItem("med_username");
     localStorage.removeItem("med_role");
-    
-    setToken(null);
-    setUsername(null);
-    setRole(null);
+    setToken(null); setUsername(null); setRole(null);
   };
 
-  // If not logged in, render Login View
   if (!token || !username || !role) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <ToastProvider>
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </ToastProvider>
+    );
   }
 
-  // Render content based on user role and selected sidebar view
+  // Route new views based on ID from Sidebar
   const renderMainContent = () => {
-    // 1. Super Admin Routing
-    if (role === "super_admin") {
-      if (activeView === "dashboard" || activeView === "hospitals" || activeView === "blockchain" || activeView === "logs") {
-        return <SuperAdminDashboard token={token} />;
-      }
-    }
-    
-    // 2. Doctor Routing
-    if (role === "doctor") {
-      if (activeView === "dashboard" || activeView === "upload" || activeView === "patient-list" || activeView === "blockchain") {
-        return <DoctorDashboard token={token} />;
-      }
-      if (activeView === "permissions") {
-        return (
-          <div className="glass-panel p-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center h-80">
-            <ShieldCheck className="h-10 w-10 text-slate-600 mb-3 animate-pulse" />
-            Consent rules are managed securely by Patients. You have active authorization to view patient scans mapped under Dr. {username}.
-          </div>
-        );
-      }
-    }
-
-    // 3. Patient Routing
-    if (role === "patient") {
+    // ----------------------------------------------------
+    // Legacy mapping (Patient dashboard is highly custom)
+    // ----------------------------------------------------
+    if (role === "patient" && ["dashboard", "patient-records"].includes(activeView)) {
       return <PatientDashboard token={token} activeView={activeView} />;
     }
 
-    // 4. Hospital Admin Routing
-    if (role === "hospital_admin") {
-      if (activeView === "dashboard") {
+    // ----------------------------------------------------
+    // New UI Routing
+    // ----------------------------------------------------
+    switch (activeView) {
+      case "dashboard":
+        return <Dashboard token={token} onViewChange={setActiveView} />;
+      case "medical-images":
+        return <MedicalImages token={token} onViewChange={setActiveView} onSelectImage={setSelectedImageId} />;
+      case "upload-image":
+        return <UploadImage token={token} onViewChange={setActiveView} />;
+      case "image-viewer":
+        return <ImageViewer token={token} selectedImageId={selectedImageId} onViewChange={setActiveView} />;
+      case "dicom-info":
+        return (
+          <DicomInfo
+            token={token}
+            selectedImageId={selectedImageId}
+            onSelectImage={setSelectedImageId}
+            onViewChange={setActiveView}
+          />
+        );
+      case "integrity-verification":
+        return <IntegrityVerification token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onViewChange={setActiveView} />;
+      case "tamper-detection":
+        return <AIForensics token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onViewChange={setActiveView} />;
+      case "tamper-localization":
+        return <TamperLocalization token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} />;
+      case "explainable-ai":
+        return <ExplainableAI token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} />;
+      case "recovery-center":
+        return <RecoveryCenter token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onViewChange={setActiveView} />;
+      case "recovery-history":
+        return <RecoveryHistory token={token} />;
+      case "blockchain-audit":
+        return <BlockchainAudit token={token} role={role} />;
+      case "access-control":
+        return <AccessControl token={token} role={role} />;
+      case "consent-management":
+        return <ConsentManagement token={token} role={role} />;
+      case "break-glass":
+        return <BreakGlassAccess token={token} role={role} />;
+      case "security-events":
+        return <SecurityEvents token={token} />;
+      case "analytics":
+      case "system-analytics":
+        return <Analytics token={token} />;
+      
+      // Secondary admin/system tabs
+      case "user-management":
+      case "hospitals":
         return <SuperAdminDashboard token={token} />;
-      }
-      if (activeView === "staff") {
+      case "system-health":
         return (
-          <div className="glass-panel p-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center h-80">
-            <Users className="h-10 w-10 text-slate-600 mb-3" />
-            Hospital staff configuration can be registered by sending API requests to hospital admin endpoints.
+          <div className="glass-panel p-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-3">
+            <Server className="h-10 w-10 text-slate-600 mb-1" />
+            <p className="text-slate-400 font-semibold text-sm">System Health Monitor</p>
+            <p className="text-slate-500 text-xs max-w-sm">
+              Detailed service health endpoints are not yet exposed by the backend API.
+              Use the Blockchain Audit view to confirm ledger integrity, or check backend logs directly.
+            </p>
           </div>
         );
-      }
-    }
-
-    // 5. Radiologist Routing
-    if (role === "radiologist") {
-      if (activeView === "dashboard" || activeView === "upload" || activeView === "blockchain") {
-        return <DoctorDashboard token={token} />;
-      }
-      if (activeView === "radiology-queue") {
+      case "system-settings":
         return (
-          <div className="glass-panel p-8 text-center text-slate-500 text-xs flex flex-col items-center justify-center h-80">
-            <Upload className="h-10 w-10 text-slate-600 mb-3 animate-bounce" />
-            Pending imaging reviews are synchronized in real-time. Use the Upload tab to add pre-processed diagnostics.
+          <div className="glass-panel p-12 text-center text-slate-500 text-xs flex flex-col items-center justify-center">
+            <Settings className="h-10 w-10 text-slate-600 mb-3 animate-[spin_4s_linear_infinite]" />
+            System parameters can only be modified via CLI by the root administrator.
           </div>
         );
-      }
-    }
 
-    // Fallback
-    return (
-      <div className="text-center py-12 text-slate-400 text-xs">
-        Under development. Active view: {activeView} for role: {role}
-      </div>
-    );
+      default:
+        return (
+          <div className="text-center py-12 text-slate-400 text-xs">
+            <ShieldCheck className="h-10 w-10 text-slate-600 mx-auto mb-3" />
+            Under development. Active view: {activeView} for role: {role}
+          </div>
+        );
+    }
   };
 
   return (
-    <div className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-100" : "light-mode text-slate-900"} flex flex-col`}>
-      <Navbar 
-        username={username} 
-        role={role} 
-        onLogout={handleLogout} 
-        alertsCount={alertsCount}
-        darkMode={darkMode}
-        onToggleTheme={() => setDarkMode(!darkMode)}
-      />
-      <div className={`flex-1 flex overflow-hidden ${darkMode ? "bg-slate-950" : "light-mode"}`}>
-        <Sidebar 
+    <ToastProvider>
+      <div className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-100" : "light-mode text-slate-900"} flex flex-col`}>
+        <Navbar 
+          username={username} 
           role={role} 
-          activeView={activeView} 
-          onViewChange={setActiveView} 
+          onLogout={handleLogout} 
+          alertsCount={alertsCount}
+          activeView={activeView}
         />
-        <main className={`flex-1 overflow-y-auto p-6 ${darkMode ? "bg-slate-950" : "light-mode"}`}>
-          <div className="max-w-7xl mx-auto">
-            {renderMainContent()}
-          </div>
-        </main>
+        <div className={`flex-1 flex overflow-hidden ${darkMode ? "bg-slate-950" : "light-mode"}`}>
+          <Sidebar 
+            role={role} 
+            activeView={activeView} 
+            onViewChange={setActiveView} 
+          />
+          <main className={`flex-1 overflow-y-auto p-6 ${darkMode ? "bg-slate-950" : "light-mode"}`}>
+            <div className="max-w-7xl mx-auto">
+              {renderMainContent()}
+            </div>
+          </main>
+        </div>
       </div>
-    </div>
+    </ToastProvider>
   );
 }

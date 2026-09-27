@@ -328,7 +328,7 @@ class SchnorrZKP:
                 logger.info("ZKP verification succeeded.")
                 return True
 
-            logger.warning("ZKP verification failed: s*G ≠ R + e*Y.")
+            logger.warning("ZKP verification failed: s*G != R + e*Y.")
             return False
 
         except Exception as exc:

@@ -47,9 +47,12 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Clear session if token is invalid/revoked
-      if (window.location.pathname !== "/login") {
-        console.warn("Session expired or token invalid. Redirecting...");
+      clearAuthSession();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth:unauthorized"));
+        if (window.location.pathname !== "/login") {
+          console.warn("Session expired or token invalid. Evicting session credentials.");
+        }
       }
     }
     return Promise.reject(error);
@@ -185,6 +188,17 @@ export const apiService = {
   // Audit Logs
   async getAuditLogs() {
     const res = await apiClient.get("/api/audit/logs");
+    return res.data;
+  },
+
+  // Blockchain Ledger
+  async getBlockchainBlocks() {
+    const res = await apiClient.get("/api/blockchain/blocks");
+    return res.data;
+  },
+
+  async verifyBlockchainChain() {
+    const res = await apiClient.get("/api/blockchain/verify-chain");
     return res.data;
   },
 };

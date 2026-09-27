@@ -150,16 +150,22 @@ def recover_compromised_image(db: Session, image_id: int, user_id: int) -> Dict[
     tx_hash = blockchain_service.record_verification(db, image_id, "RECOVERY_VERIFIED", payload_audit)
 
     # 10. Update Digital Integrity Twin Status
+    twin_status_val = "RECOVERED" if verification_passed else "RECOVERY_FAILED"
+    details_msg = (
+        f"Region-level self-recovery executed on {len(tampered_rois)} ROIs. Post-recovery SHA-3 verification passed."
+        if verification_passed
+        else f"Region-level self-recovery executed on {len(tampered_rois)} ROIs. Post-recovery SHA-3 verification failed."
+    )
     update_twin_status(
         db,
         image_id,
-        status="RECOVERED" if verification_passed else "RECOVERY_FAILED",
+        status=twin_status_val,
         event_name="RECOVERY_COMPLETED",
-        details=f"Region-level self-recovery executed on {len(tampered_rois)} ROIs. Post-recovery SHA-3 verification passed.",
+        details=details_msg,
         region_map=[{
             "region_id": f"ROI_{idx+1}",
             "coordinates": roi,
-            "status": "RESTORED",
+            "status": "RESTORED" if verification_passed else "RESTORATION_FAILED",
             "recovery_method": "TRUSTED_IPFS_ROI_REPLACEMENT"
         } for idx, roi in enumerate(tampered_rois)]
     )
@@ -205,6 +211,6 @@ def recover_compromised_image(db: Session, image_id: int, user_id: int) -> Dict[
         "trusted_hash": twin.trusted_hash,
         "verification_passed": verification_passed,
         "blockchain_tx_hash": tx_hash,
-        "twin_status": "RECOVERED",
+        "twin_status": twin_status_val,
         "recovered_image_base64": f"data:image/png;base64,{recovered_b64}"
     }

@@ -120,6 +120,14 @@ def test_load_encrypted_object_resolution():
         load_encrypted_object("")
 
 
+def test_load_encrypted_object_rejects_arbitrary_filesystem_paths(tmp_path):
+    """Ciphertext loader must not read files outside encrypted object storage."""
+    secret = tmp_path / "secret.txt"
+    secret.write_bytes(b"PLAINTEXT_SHOULD_NOT_BE_READ")
+    with pytest.raises(FileNotFoundError):
+        load_encrypted_object(str(secret))
+
+
 def test_local_blockchain_pow_and_persistence(db: Session):
     """Verifies local proof-of-work blockchain ledger and database transaction persistence."""
     chain = LocalSimulatedBlockchain()

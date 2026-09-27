@@ -8,18 +8,21 @@ import os
 from loguru import logger
 from datetime import datetime, timezone
 
-from app.config import STORAGE_DIR
+from pathlib import Path
+from app.config import STORAGE_DIR, settings
 from app.database import get_db
 from app.models import (
     User, MedicalImage, PatientProfile, DoctorProfile, Hospital, Report,
     AuditLog, DeviceFingerprint, DicomMetadata, RevocationRegistry, Permission,
-    BlockchainTransaction, DicomSlice, ConsentGrant
+    BlockchainTransaction, DicomSlice, ConsentGrant, DigitalIntegrityTwin
 )
 from app.schemas import MedicalImageResponse, ImageVerifyResponse
 from app.auth import get_current_user, RoleChecker
 from app.preprocessing import preprocess_medical_image, watermark_image, preprocess_dicom_image
 from app.crypto import encrypt_image, decrypt_image, sha3_hash
-from app.storage_provider import store_encrypted_object, load_encrypted_object, get_storage_provider
+from app.storage_provider import (
+    store_encrypted_object, load_encrypted_object, delete_encrypted_object, get_storage_provider,
+)
 from app.blockchain import blockchain_service
 from app.notifications import ws_manager
 from app.celery_worker import run_ai_tamper_localization, compile_forensic_report_task
@@ -33,6 +36,95 @@ from app.authorization import authorize_image_action, authorize_emergency_access
 router = APIRouter(prefix="/images", tags=["Medical Images"])
 doctor_or_admin_guard = RoleChecker(["super_admin", "hospital_admin", "doctor", "radiologist"])
 uploader_guard = RoleChecker(["super_admin", "doctor", "radiologist"])
+
+
+def _safe_upload_filename(original_name: Optional[str], prefix: str, patient_id: int) -> str:
+    base = Path(original_name or "upload.bin").name.replace("\x00", "")
+    if not base or base in {".", ".."}:
+        base = "upload.bin"
+    return f"{prefix}_{patient_id}_{int(datetime.now(timezone.utc).timestamp())}_{base}.enc"
+
+
+_STANDARD_IMAGE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+_STANDARD_IMAGE_SIGNATURES = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff")
+_DICOM_CONTENT_TYPES = {"application/dicom", "application/dicom+json", "application/octet-stream"}
+
+
+def _validate_standard_upload(file: UploadFile, contents: bytes) -> None:
+    """Reject spoofed/non-image uploads before OpenCV decodes the payload."""
+    content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
+    if content_type not in _STANDARD_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only PNG and JPEG image uploads are supported")
+    if not contents.startswith(_STANDARD_IMAGE_SIGNATURES):
+        raise HTTPException(status_code=400, detail="Image file signature does not match its declared type")
+
+
+def _validate_dicom_upload(file: UploadFile) -> None:
+    # Browsers commonly label .dcm files as application/octet-stream. The
+    # authoritative validation remains pydicom's strict Part 10 parser below.
+    content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
+    if content_type and content_type not in _DICOM_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Unsupported DICOM content type")
+
+
+def _assert_can_upload_for_patient(db: Session, current_user: User, patient_profile: PatientProfile) -> User:
+    patient_user = db.query(User).filter(User.id == patient_profile.user_id).first()
+    if not patient_user:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    if current_user.role == "super_admin":
+        return patient_user
+    if not current_user.hospital_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Uploader must belong to a hospital")
+    if patient_user.hospital_id != current_user.hospital_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot upload images for a patient outside your hospital",
+        )
+    return patient_user
+
+
+def _resolve_image_hospital_id(current_user: User, patient_user: User) -> int:
+    hospital_id = current_user.hospital_id or patient_user.hospital_id
+    if not hospital_id:
+        raise HTTPException(status_code=400, detail="Cannot determine hospital for this image")
+    return hospital_id
+
+
+def _compensate_failed_upload(db: Session, provider: str, reference: str) -> None:
+    """Rollback database work and remove only this request's newly-created ciphertext."""
+    try:
+        db.rollback()
+    except Exception as rollback_error:
+        logger.error(f"Upload registration rollback failed: {rollback_error}")
+
+    try:
+        # A reference owned by any committed image, slice, or digital twin must never be deleted.
+        # The caller supplies the StoredObject returned during this request only.
+        existing_img = db.query(MedicalImage.id).filter(MedicalImage.file_path == reference).first()
+        if existing_img:
+            logger.critical(
+                f"Refusing failed-upload cleanup for {reference}: it belongs to image {existing_img[0]}"
+            )
+            return
+        existing_slice = db.query(DicomSlice.id).filter(DicomSlice.ipfs_cid == reference).first()
+        if existing_slice:
+            logger.critical(
+                f"Refusing failed-upload cleanup for {reference}: it belongs to DICOM slice {existing_slice[0]}"
+            )
+            return
+        existing_twin = db.query(DigitalIntegrityTwin.id).filter(DigitalIntegrityTwin.ipfs_cid == reference).first()
+        if existing_twin:
+            logger.critical(
+                f"Refusing failed-upload cleanup for {reference}: it belongs to digital twin {existing_twin[0]}"
+            )
+            return
+        delete_encrypted_object(reference, provider)
+        logger.info(f"Removed unregistered encrypted object {reference} after upload failure")
+    except Exception as cleanup_error:
+        # The request still fails. Operators need this explicit record to
+        # remediate a ciphertext orphan without exposing a storage path to the client.
+        logger.error(f"Failed to compensate encrypted object after upload failure: {cleanup_error}")
+
 
 @router.post("/upload", response_model=MedicalImageResponse)
 async def upload_medical_image(
@@ -56,10 +148,15 @@ async def upload_medical_image(
     patient_profile = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
     if not patient_profile:
         raise HTTPException(status_code=404, detail="Patient profile not found")
+    patient_user = _assert_can_upload_for_patient(db, current_user, patient_profile)
+    hospital_id = _resolve_image_hospital_id(current_user, patient_user)
         
     contents = await file.read()
-    if len(contents) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (Max 10MB)")
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file is not allowed")
+    if len(contents) > settings.max_image_bytes:
+        raise HTTPException(status_code=400, detail=f"File too large (Max {settings.max_image_bytes} bytes)")
+    _validate_standard_upload(file, contents)
 
     # 1. Image Preprocessing (Noise removal, contrast enhancement, normalized resize)
     try:
@@ -73,12 +170,12 @@ async def upload_medical_image(
     encrypted_hash = sha3_hash(encrypted_bytes)
 
     # 3. Store Encrypted image using StorageProvider (Local or IPFS)
-    filename = f"img_{patient_id}_{int(datetime.now(timezone.utc).timestamp())}_{file.filename}.enc"
+    filename = _safe_upload_filename(file.filename, "img", patient_id)
     stored = store_encrypted_object(encrypted_bytes, filename)
     file_reference = stored.reference
 
-    # 4. Save metadata to DB
-    hospital_id = current_user.hospital_id or 1
+    # 4. Register all local database side effects in one transaction. The
+    # storage object was created above and is compensated on any failure.
     db_image = MedicalImage(
         title=title,
         patient_id=patient_id,
@@ -94,7 +191,7 @@ async def upload_medical_image(
     )
     try:
         db.add(db_image)
-        db.commit()
+        db.flush()
         db.refresh(db_image)
 
         # 4.5 Instantiate Digital Integrity Twin
@@ -105,12 +202,14 @@ async def upload_medical_image(
             ipfs_cid=file_reference,
             owner_id=current_user.id,
             metadata_dict={"title": title, "image_type": image_type, "quality_score": quality_score, "entropy": entropy, "storage_provider": stored.provider},
-            provenance_info={"uploader_id": current_user.id, "uploader": current_user.username, "hospital_id": hospital_id, "timestamp": datetime.now(timezone.utc).isoformat()}
+            provenance_info={"uploader_id": current_user.id, "uploader": current_user.username, "hospital_id": hospital_id, "timestamp": datetime.now(timezone.utc).isoformat()},
+            commit=False,
         )
 
-        # 5. Log transaction inside Blockchain Ledger
+        # 5. Stage the local ledger event with the registration transaction.
+        # A configured external chain cannot be atomically rolled back.
         tx_hash = blockchain_service.record_upload(
-            db, db_image.id, original_hash, file_reference, patient_id, current_user.id
+            db, db_image.id, original_hash, file_reference, patient_id, current_user.id, commit=False,
         )
         
         # 6. Audit Logging
@@ -125,9 +224,9 @@ async def upload_medical_image(
         db.add(audit)
         db.commit()
     except Exception as e:
-        db.rollback()
+        _compensate_failed_upload(db, stored.provider, file_reference)
         logger.error(f"Failed to complete image record registration: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Image registration failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Image registration failed; encrypted upload was cleaned up") from e
 
     # Broadcast upload event via WebSockets
     try:
@@ -161,10 +260,15 @@ async def upload_dicom_image(
     patient_profile = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
     if not patient_profile:
         raise HTTPException(status_code=404, detail="Patient profile not found")
+    patient_user = _assert_can_upload_for_patient(db, current_user, patient_profile)
+    hospital_id = _resolve_image_hospital_id(current_user, patient_user)
         
     contents = await file.read()
-    if len(contents) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="DICOM File too large (Max 20MB)")
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file is not allowed")
+    if len(contents) > settings.max_dicom_bytes:
+        raise HTTPException(status_code=400, detail=f"DICOM File too large (Max {settings.max_dicom_bytes} bytes)")
+    _validate_dicom_upload(file)
 
     # 1. Parse DICOM
     try:
@@ -178,12 +282,13 @@ async def upload_dicom_image(
     encrypted_hash = sha3_hash(encrypted_bytes)
 
     # 3. Store Encrypted image using StorageProvider (Local or IPFS)
-    filename = f"dicom_{patient_id}_{int(datetime.now(timezone.utc).timestamp())}_{file.filename}.enc"
+    filename = _safe_upload_filename(file.filename, "dicom", patient_id)
     stored = store_encrypted_object(encrypted_bytes, filename)
     file_reference = stored.reference
 
-    # 4. Save Image record
-    hospital_id = current_user.hospital_id or 1
+    # 4. Stage the image, DICOM metadata, twin, ledger, and audit record in
+    # one local database transaction. The freshly-created ciphertext is
+    # compensated if any registration step fails.
     modality = dicom_meta.get("modality", "MRI")
     db_image = MedicalImage(
         title=title,
@@ -198,69 +303,69 @@ async def upload_dicom_image(
         entropy=entropy,
         encryption_key_metadata=metadata_json
     )
-    db.add(db_image)
-    db.commit()
-    db.refresh(db_image)
+    try:
+        db.add(db_image)
+        db.flush()
+        db.refresh(db_image)
 
-    # 4.5 Instantiate Digital Integrity Twin
-    create_digital_twin(
-        db=db,
-        image_id=db_image.id,
-        trusted_hash=original_hash,
-        ipfs_cid=file_reference,
-        owner_id=current_user.id,
-        metadata_dict={"title": title, "image_type": modality, "quality_score": quality_score, "entropy": entropy, "dicom_meta": dicom_meta, "storage_provider": stored.provider},
-        provenance_info={"uploader_id": current_user.id, "uploader": current_user.username, "hospital_id": hospital_id, "timestamp": datetime.now(timezone.utc).isoformat()}
-    )
+        # 4.5 Instantiate Digital Integrity Twin
+        create_digital_twin(
+            db=db,
+            image_id=db_image.id,
+            trusted_hash=original_hash,
+            ipfs_cid=file_reference,
+            owner_id=current_user.id,
+            metadata_dict={"title": title, "image_type": modality, "quality_score": quality_score, "entropy": entropy, "dicom_meta": dicom_meta, "storage_provider": stored.provider},
+            provenance_info={"uploader_id": current_user.id, "uploader": current_user.username, "hospital_id": hospital_id, "timestamp": datetime.now(timezone.utc).isoformat()},
+            commit=False,
+        )
 
-    # 5. Save DICOM Metadata
-    db_dicom_meta = DicomMetadata(
-        image_id=db_image.id,
-        patient_name=dicom_meta.get("patient_name"),
-        study_instance_uid=dicom_meta.get("study_instance_uid"),
-        series_instance_uid=dicom_meta.get("series_instance_uid"),
-        manufacturer=dicom_meta.get("manufacturer"),
-        study_date=dicom_meta.get("study_date")
-    )
-    db.add(db_dicom_meta)
-    db.commit()
+        # 5. Save DICOM metadata and the rendered first-slice mapping.
+        db.add(DicomMetadata(
+            image_id=db_image.id,
+            patient_name=dicom_meta.get("patient_name"),
+            study_instance_uid=dicom_meta.get("study_instance_uid"),
+            series_instance_uid=dicom_meta.get("series_instance_uid"),
+            manufacturer=dicom_meta.get("manufacturer"),
+            study_date=dicom_meta.get("study_date"),
+        ))
+        db.add(DicomSlice(
+            image_id=db_image.id,
+            slice_index=0,
+            ipfs_cid=file_reference,
+            slice_hash=original_hash,
+        ))
 
-    # 5.5 Save volumetric DICOM slice record to database with actual image hash
-    db_slice = DicomSlice(
-        image_id=db_image.id,
-        slice_index=0,
-        ipfs_cid=file_reference,
-        slice_hash=original_hash
-    )
-    db.add(db_slice)
-    db.commit()
-
-    # 6. Record transaction to blockchain
-    tx_hash = blockchain_service.record_upload(
-        db, db_image.id, original_hash, file_reference, patient_id, current_user.id
-    )
-
-    # 7. Audit Log
-    audit = AuditLog(
-        user_id=current_user.id,
-        image_id=db_image.id,
-        action="UPLOAD",
-        status="SUCCESS",
-        details=f"Uploaded DICOM image '{title}' (ID: {db_image.id}, Ref: {file_reference})",
-        timestamp=datetime.now(timezone.utc)
-    )
-    db.add(audit)
-    db.commit()
+        # 6. Stage local ledger event and audit record before the sole commit.
+        tx_hash = blockchain_service.record_upload(
+            db, db_image.id, original_hash, file_reference, patient_id, current_user.id, commit=False,
+        )
+        db.add(AuditLog(
+            user_id=current_user.id,
+            image_id=db_image.id,
+            action="UPLOAD",
+            status="SUCCESS",
+            details=f"Uploaded DICOM image '{title}' (ID: {db_image.id}, Ref: {file_reference})",
+            timestamp=datetime.now(timezone.utc),
+        ))
+        db.commit()
+    except Exception as e:
+        _compensate_failed_upload(db, stored.provider, file_reference)
+        logger.error(f"Failed to complete DICOM record registration: {str(e)}")
+        raise HTTPException(status_code=500, detail="DICOM registration failed; encrypted upload was cleaned up") from e
 
     # Broadcast Live Alert
-    await ws_manager.broadcast({
-        "event": "new_scan_uploaded",
-        "image_id": db_image.id,
-        "title": title,
-        "patient_id": patient_id,
-        "uploader": current_user.username,
-        "tx_hash": tx_hash
-    })
+    try:
+        await ws_manager.broadcast({
+            "event": "new_scan_uploaded",
+            "image_id": db_image.id,
+            "title": title,
+            "patient_id": patient_id,
+            "uploader": current_user.username,
+            "tx_hash": tx_hash,
+        })
+    except Exception as e:
+        logger.warning(f"WebSocket broadcast failed: {str(e)}")
 
     return db_image
 
@@ -580,11 +685,10 @@ async def handle_tampering_pathway(
 
         # Trigger background Celery task with local synchronous fallback
         logger.info("Scheduling U-Net tamper localization in background / fallback.")
-        image_hex = image_bytes.hex()
         heatmap_name = f"heatmap_img_{image.id}.png"
         
         try:
-            task_res = run_ai_tamper_localization.delay(image_hex, heatmap_name)
+            task_res = run_ai_tamper_localization.delay(image.id, heatmap_name)
             existing_report.details = json.dumps({"task_id": task_res.id, "status": "AI_Inference_Queued"})
             db.commit()
         except Exception as queue_err:
@@ -894,6 +998,13 @@ async def get_fhir_document_reference(
     image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Medical image record not found")
+    patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
+    if current_user.role != "super_admin" and (not patient or patient.user_id != current_user.id):
+        try:
+            authorize_image_action(db, current_user, image, "view", purpose="FHIR_EXPORT")
+        except HTTPException:
+            if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for FHIR export")
     from app.fhir import create_fhir_document_reference
     return create_fhir_document_reference(
         image.id, image.title, image.patient_id, image.file_path, image.quality_score
@@ -968,8 +1079,9 @@ async def get_srm_residual_image(
     try:
         encrypted_bytes = load_encrypted_object(image.file_path)
         decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
-    except Exception:
-        decrypted_bytes = encrypted_bytes
+    except Exception as e:
+        logger.error(f"Failed to load/decrypt image for SRM residual: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load image for SRM residual extraction")
 
     try:
         srm_png = extract_srm_residual(decrypted_bytes)
@@ -1016,5 +1128,3 @@ async def get_digital_twin_endpoint(
         "created_at": twin.created_at.isoformat() if twin.created_at else None,
         "updated_at": twin.updated_at.isoformat() if twin.updated_at else None
     }
-
-

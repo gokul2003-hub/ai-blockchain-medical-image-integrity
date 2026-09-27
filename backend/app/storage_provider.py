@@ -36,6 +36,9 @@ class StorageProvider(ABC):
     @abstractmethod
     def get(self, reference: str) -> bytes: ...
 
+    @abstractmethod
+    def delete(self, reference: str) -> None: ...
+
 
 class LocalStorageProvider(StorageProvider):
     name = "local"
@@ -63,6 +66,14 @@ class LocalStorageProvider(StorageProvider):
             return path.read_bytes()
         except FileNotFoundError as exc:
             raise FileNotFoundError("Encrypted object is unavailable") from exc
+
+    def delete(self, reference: str) -> None:
+        if Path(reference).name != reference or not reference.endswith(".enc"):
+            raise ValueError("Invalid local object reference")
+        path = ENCRYPTED_DIR / reference
+        # This method is only used with the just-created reference returned by
+        # put(), never an arbitrary database-supplied storage path.
+        path.unlink(missing_ok=True)
 
 
 class IPFSProvider(StorageProvider):
@@ -97,6 +108,20 @@ class IPFSProvider(StorageProvider):
         except requests.RequestException as exc:
             raise RuntimeError("IPFS retrieval failed") from exc
 
+    def delete(self, reference: str) -> None:
+        if not reference or any(char.isspace() for char in reference):
+            raise ValueError("Invalid IPFS content identifier")
+        try:
+            response = requests.post(
+                f"{settings.ipfs_api_url.rstrip('/')}/api/v0/pin/rm",
+                params={"arg": reference}, timeout=20,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            # IPFS is content-addressed: unpinning retracts this node's newly
+            # created retention but cannot erase a CID from other peers.
+            raise RuntimeError("IPFS compensation unpin failed") from exc
+
 
 
 def get_storage_provider(name: str | None = None) -> StorageProvider:
@@ -111,38 +136,52 @@ def get_storage_provider(name: str | None = None) -> StorageProvider:
 def store_encrypted_object(payload: bytes, filename: str, provider_name: str | None = None) -> StoredObject:
     """Stores payload using the configured or specified StorageProvider."""
     provider = get_storage_provider(provider_name)
-    return provider.put(payload, filename)
+    safe_name = Path(filename or "object.enc").name.replace("\x00", "") or "object.enc"
+    return provider.put(payload, safe_name)
+
+
+def delete_encrypted_object(reference: str, provider_name: str) -> None:
+    """Compensate a failed registration using only its newly-created object reference."""
+    get_storage_provider(provider_name).delete(reference)
+
+
+def _is_within_directory(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        root_resolved = root.resolve()
+        return os.path.commonpath([str(resolved), str(root_resolved)]) == str(root_resolved)
+    except (OSError, ValueError):
+        return False
 
 
 def load_encrypted_object(reference: str) -> bytes:
-    """
-    Safely retrieves encrypted payload regardless of whether it was stored locally or on IPFS.
-    Supports local .enc files, absolute paths, simulated IPFS files, and live IPFS CIDs.
-    """
+    """Retrieve ciphertext only from approved encrypted-object locations."""
     if not reference or not reference.strip():
         raise ValueError("Empty storage reference")
 
     clean_ref = reference.strip()
-
-    # 1. Direct absolute/relative file path check
     ref_path = Path(clean_ref)
-    if ref_path.is_file() and ref_path.exists():
-        return ref_path.read_bytes()
+    encrypted_root = ENCRYPTED_DIR.resolve()
+    ipfs_sim_root = (STORAGE_DIR / "ipfs_sim").resolve()
 
-    # 2. Local ENCRYPTED_DIR check
-    local_target = ENCRYPTED_DIR / ref_path.name
-    if local_target.exists():
-        return local_target.read_bytes()
+    # UUID-style local object id (current LocalStorageProvider format)
+    if ref_path.name == clean_ref and clean_ref.endswith(".enc"):
+        local_target = encrypted_root / clean_ref
+        if local_target.is_file():
+            return local_target.read_bytes()
 
-    # 3. Local simulated IPFS directory check
-    sim_target = STORAGE_DIR / "ipfs_sim" / ref_path.name
-    if sim_target.exists():
+    # Legacy absolute/relative paths must still resolve inside encrypted storage
+    if _is_within_directory(ref_path, encrypted_root) and ref_path.resolve().is_file():
+        return ref_path.resolve().read_bytes()
+
+    sim_target = ipfs_sim_root / ref_path.name
+    if ref_path.name == Path(ref_path.name).name and _is_within_directory(sim_target, ipfs_sim_root) and sim_target.is_file():
         return sim_target.read_bytes()
 
-    # 4. Live IPFS retrieval
-    try:
-        ipfs_provider = IPFSProvider()
-        return ipfs_provider.get(clean_ref)
-    except Exception as exc:
-        raise FileNotFoundError(f"Failed to retrieve encrypted object for reference '{clean_ref}': {exc}") from exc
+    if settings.storage_provider == "ipfs" or (clean_ref and "/" not in clean_ref and "\\" not in clean_ref and not clean_ref.endswith(".enc")):
+        try:
+            return IPFSProvider().get(clean_ref)
+        except Exception as exc:
+            raise FileNotFoundError(f"Failed to retrieve encrypted object for reference '{clean_ref}': {exc}") from exc
 
+    raise FileNotFoundError("Encrypted object is unavailable")
