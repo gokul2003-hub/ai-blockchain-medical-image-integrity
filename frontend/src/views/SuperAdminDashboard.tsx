@@ -51,7 +51,7 @@ export default function SuperAdminDashboard({ token }: SuperAdminDashboardProps)
   const [currentSubView, setCurrentSubView] = useState("analytics"); // analytics, explorer
 
   const getBackendUrl = () => {
-    return import.meta.env.VITE_API_URL || "http://localhost:8000";
+    return import.meta.env.VITE_API_URL || "";
   };
 
   const getHeaders = () => {

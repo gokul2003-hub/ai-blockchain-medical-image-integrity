@@ -1,6 +1,7 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Use relative API URLs by default so browser requests work in Arena previews and behind a reverse proxy.
+export const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 
 // Standardized Storage Keys
 const TOKEN_KEY = "med_token";

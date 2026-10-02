@@ -1,49 +1,51 @@
 import React, { useState } from "react";
 import {
-  LayoutDashboard,
-  Images,
-  Upload,
-  Eye,
-  FileCode2,
-  ShieldCheck,
-  ScanSearch,
-  Crosshair,
-  BrainCircuit,
-  RefreshCcw,
-  History,
-  BadgeCheck,
-  Link2,
-  Lock,
-  FileKey2,
+  Activity,
   AlertOctagon,
   BarChart3,
-  Activity,
-  Server,
-  Users,
-  Settings,
+  BrainCircuit,
   Building2,
   ChevronLeft,
   ChevronRight,
+  Crosshair,
+  Eye,
+  FileCode2,
+  FileKey2,
+  History,
+  Images,
+  LayoutDashboard,
+  Link2,
+  Lock,
+  RefreshCcw,
+  ScanSearch,
+  Server,
+  Settings,
   ShieldAlert,
+  ShieldCheck,
+  Upload,
+  Users,
+  X,
 } from "lucide-react";
 
 interface SidebarProps {
   role: string;
   activeView: string;
   onViewChange: (view: string) => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 interface NavItem {
   id: string;
   label: string;
   icon: React.ElementType;
-  roles?: string[]; // undefined = all roles permitted in this section
+  roles?: string[];
 }
 
 interface NavSection {
   title: string;
   items: NavItem[];
-  roles?: string[]; // undefined = all roles
+  roles?: string[];
 }
 
 const allSections: NavSection[] = [
@@ -108,7 +110,6 @@ const allSections: NavSection[] = [
     ],
     roles: ["super_admin", "hospital_admin"],
   },
-  // Patient-only sections
   {
     title: "My Health Records",
     items: [
@@ -121,103 +122,119 @@ const allSections: NavSection[] = [
   },
 ];
 
-export default function Sidebar({ role, activeView, onViewChange }: SidebarProps) {
+const roleLabel: Record<string, string> = {
+  super_admin: "Super Admin",
+  hospital_admin: "Hospital Admin",
+  doctor: "Medical Specialist",
+  radiologist: "Clinical Radiologist",
+  patient: "Patient Portal",
+};
+
+export default function Sidebar({ role, activeView, onViewChange, mobileOpen = false, onMobileClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
-  // Filter sections and items based on role
   const visibleSections = allSections
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => !item.roles || item.roles.includes(role)),
     }))
-    .filter((section) => {
-      if (section.roles && !section.roles.includes(role)) return false;
-      return section.items.length > 0;
-    });
+    .filter((section) => !section.roles || section.roles.includes(role))
+    .filter((section) => section.items.length > 0);
 
   return (
     <aside
-      className={`h-[calc(100vh-4rem)] bg-slate-950/70 border-r border-slate-800/60 flex flex-col z-20 sticky top-16 transition-all duration-300 ${
-        collapsed ? "w-[56px]" : "w-60"
-      }`}
+      className={`sidebar-shell fixed left-0 top-16 z-40 flex h-[calc(100vh-4rem)] w-[286px] flex-col transition-[width,transform] duration-300 lg:sticky lg:top-16 lg:z-20 lg:translate-x-0 ${
+        collapsed ? "lg:w-[76px]" : "lg:w-[272px]"
+      } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+      aria-label="Primary navigation"
     >
-      {/* Collapse toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-6 h-6 w-6 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center z-30 hover:bg-slate-700 transition-colors cursor-pointer shadow-md"
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-      >
-        {collapsed ? (
-          <ChevronRight className="h-3 w-3 text-slate-400" />
-        ) : (
-          <ChevronLeft className="h-3 w-3 text-slate-400" />
-        )}
-      </button>
+      <div className="flex h-[4.4rem] flex-shrink-0 items-center justify-between border-b border-slate-800/70 px-4">
+        <div className={`flex items-center gap-2.5 ${collapsed ? "lg:hidden" : ""}`}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-400/10">
+            <Activity className="h-4 w-4 text-cyan-300" />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold tracking-[0.13em] text-slate-200">SECURITY OPS</p>
+            <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.1em] text-slate-600">{roleLabel[role] || "Workspace"}</p>
+          </div>
+        </div>
+        <div className={`mx-auto hidden h-8 w-8 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-400/10 ${collapsed ? "lg:flex" : ""}`}>
+          <ShieldCheck className="h-4 w-4 text-cyan-300" />
+        </div>
+        <button
+          type="button"
+          onClick={onMobileClose}
+          className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-800 hover:text-slate-100 lg:hidden"
+          aria-label="Close navigation"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          className="absolute -right-3 top-[4.8rem] hidden h-6 w-6 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-400 shadow-lg transition hover:border-blue-400/40 hover:bg-slate-700 hover:text-white lg:flex"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+        </button>
+      </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {visibleSections.map((section, si) => (
-          <div key={si} className={collapsed ? "mb-1" : "mb-2"}>
-            {/* Section header */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4" aria-label="Workspace sections">
+        {visibleSections.map((section, sectionIndex) => (
+          <div key={`${section.title}-${sectionIndex}`} className="mb-5">
             {!collapsed && (
-              <div className="text-[9px] text-slate-600 font-bold uppercase tracking-widest px-3 py-1.5 mt-1">
-                {section.title}
+              <div className="mb-2 flex items-center gap-2 px-3 text-[9px] font-bold uppercase tracking-[0.18em] text-slate-600">
+                <span>{section.title}</span>
+                {section.title === "Security" && <span className="h-1 w-1 rounded-full bg-cyan-400/60" />}
               </div>
             )}
-            {collapsed && si > 0 && (
-              <div className="border-t border-slate-800/60 my-1.5 mx-1" />
-            )}
-
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => onViewChange(item.id)}
-                  title={collapsed ? item.label : undefined}
-                  aria-label={item.label}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium tracking-wide transition-all cursor-pointer group relative ${
-                    isActive
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-900/30"
-                      : "text-slate-500 hover:bg-slate-800/60 hover:text-slate-200"
-                  }`}
-                >
-                  <Icon
-                    className={`flex-shrink-0 ${collapsed ? "h-4.5 w-4.5" : "h-4 w-4"} ${
-                      isActive ? "text-white" : "text-slate-500 group-hover:text-slate-300"
-                    }`}
-                  />
-                  {!collapsed && (
-                    <span className="truncate">{item.label}</span>
-                  )}
-                  {/* Active indicator dot */}
-                  {isActive && collapsed && (
-                    <span className="absolute right-1 top-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-blue-400" />
-                  )}
-                </button>
-              );
-            })}
+            {collapsed && sectionIndex > 0 && <div className="mx-2 mb-3 border-t border-slate-800/70" />}
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeView === item.id;
+                return (
+                  <button
+                    key={`${section.title}-${item.id}`}
+                    type="button"
+                    onClick={() => onViewChange(item.id)}
+                    title={collapsed ? item.label : undefined}
+                    aria-label={item.label}
+                    className={`nav-item group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold tracking-[0.01em] ${
+                      collapsed ? "lg:justify-center lg:px-0" : ""
+                    } ${isActive ? "nav-item-active text-slate-100" : "text-slate-500"}`}
+                  >
+                    <Icon className={`h-[17px] w-[17px] flex-shrink-0 transition-colors ${isActive ? "text-blue-300" : "text-slate-600 group-hover:text-slate-300"}`} />
+                    {!collapsed && <span className="truncate">{item.label}</span>}
+                    {isActive && !collapsed && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(48,213,208,0.8)]" />}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ))}
       </nav>
 
-      {/* Footer status */}
-      <div className="border-t border-slate-800/60 p-3">
-        {collapsed ? (
-          <div className="flex justify-center">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" title="Blockchain: Online" />
-          </div>
-        ) : (
-          <div className="flex items-center justify-between text-[10px]">
-            <span className="text-slate-600 font-medium">Blockchain</span>
-            <span className="flex items-center gap-1 text-emerald-500 font-bold">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              ONLINE
-            </span>
-          </div>
-        )}
+      <div className="flex-shrink-0 border-t border-slate-800/70 p-3">
+        <div className={`rounded-xl border border-emerald-400/10 bg-emerald-400/[0.035] p-3 ${collapsed ? "lg:p-2" : ""}`}>
+          {collapsed ? (
+            <div className="flex justify-center" title="Blockchain online">
+              <span className="live-dot" />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-semibold text-slate-400">Blockchain network</span>
+                <span className="flex items-center gap-1.5 text-[9px] font-bold tracking-[0.12em] text-emerald-300">
+                  <span className="live-dot" /> LIVE
+                </span>
+              </div>
+              <div className="status-line mt-3 opacity-70" />
+              <p className="mt-2 text-[9px] leading-relaxed text-slate-600">Ledger integrity is continuously monitored.</p>
+            </>
+          )}
+        </div>
       </div>
     </aside>
   );

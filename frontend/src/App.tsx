@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
-import { ShieldCheck, Users, Upload, RefreshCw, FileCode2, Settings, Building2, Server } from "lucide-react";
+import { Server, Settings, ShieldCheck } from "lucide-react";
 
 import { apiClient } from "./services/api";
 import { ToastProvider } from "./components/Toast";
@@ -36,7 +36,8 @@ export default function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem("med_username"));
   const [role, setRole] = useState<string | null>(localStorage.getItem("med_role"));
   const [activeView, setActiveView] = useState("dashboard");
-  const [darkMode, setDarkMode] = useState<boolean>(true);
+  const [darkMode] = useState<boolean>(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   
   // Shared state across views
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
@@ -102,7 +103,8 @@ export default function App() {
     if (token && role === "super_admin") { pollAlerts(); }
   }, [token, role]);
 
-  const getBackendUrl = () => import.meta.env.VITE_API_URL || "http://localhost:8000";
+  // Keep browser requests relative in preview/production. Vite proxies /api locally.
+  const getBackendUrl = () => import.meta.env.VITE_API_URL || "";
 
   const pollAlerts = async () => {
     try {
@@ -232,22 +234,36 @@ export default function App() {
 
   return (
     <ToastProvider>
-      <div className={`min-h-screen ${darkMode ? "bg-slate-950 text-slate-100" : "light-mode text-slate-900"} flex flex-col`}>
-        <Navbar 
-          username={username} 
-          role={role} 
-          onLogout={handleLogout} 
+      <div className={`app-shell ${darkMode ? "text-slate-100" : "light-mode text-slate-900"} flex min-h-screen flex-col`}>
+        <Navbar
+          username={username}
+          role={role}
+          onLogout={handleLogout}
           alertsCount={alertsCount}
           activeView={activeView}
+          onMenuClick={() => setMobileNavOpen(true)}
         />
-        <div className={`flex-1 flex overflow-hidden ${darkMode ? "bg-slate-950" : "light-mode"}`}>
-          <Sidebar 
-            role={role} 
-            activeView={activeView} 
-            onViewChange={setActiveView} 
+        <div className="relative flex min-h-0 flex-1">
+          {mobileNavOpen && (
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => setMobileNavOpen(false)}
+              className="fixed inset-0 z-30 bg-slate-950/70 backdrop-blur-sm lg:hidden"
+            />
+          )}
+          <Sidebar
+            role={role}
+            activeView={activeView}
+            onViewChange={(view) => {
+              setActiveView(view);
+              setMobileNavOpen(false);
+            }}
+            mobileOpen={mobileNavOpen}
+            onMobileClose={() => setMobileNavOpen(false)}
           />
-          <main className={`flex-1 overflow-y-auto p-6 ${darkMode ? "bg-slate-950" : "light-mode"}`}>
-            <div className="max-w-7xl mx-auto">
+          <main className="app-main min-h-[calc(100vh-4rem)] flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+            <div key={activeView} className="animate-page-enter mx-auto w-full max-w-[1440px]">
               {renderMainContent()}
             </div>
           </main>

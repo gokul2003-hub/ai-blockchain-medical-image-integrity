@@ -65,7 +65,7 @@ export default function DoctorDashboard({ token }: DoctorDashboardProps) {
   } | null>(null);
 
   const getBackendUrl = () => {
-    return import.meta.env.VITE_API_URL || "http://localhost:8000";
+    return import.meta.env.VITE_API_URL || "";
   };
 
   const getHeaders = () => {

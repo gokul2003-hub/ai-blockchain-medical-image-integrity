@@ -172,7 +172,7 @@ function KpiCard({
     <button
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`glass-panel ${accentClass} p-5 flex items-center gap-4 w-full text-left transition-all duration-200 hover:brightness-110 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer group`}
+      className={`glass-panel glass-panel-hover data-sheen ${accentClass} p-5 flex items-center gap-4 w-full text-left transition-all duration-200 hover:brightness-110 focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer group`}
     >
       <div className={`h-11 w-11 rounded-xl ${iconBg} flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform`}>
         <Icon className={`h-5 w-5 ${iconColor}`} />
@@ -325,26 +325,56 @@ export default function Dashboard({ token: _token, onViewChange }: DashboardProp
   return (
     <div className="w-full space-y-6 text-left">
 
-      {/* ── Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold tracking-tight text-slate-100">
-            Command Center
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Real-time medical image integrity &amp; forensics monitoring
-          </p>
+      {/* ── Hero command surface ── */}
+      <section className="dashboard-hero data-sheen overflow-hidden p-6 sm:p-8" aria-labelledby="command-center-title">
+        <div className="relative z-10 flex min-h-[13rem] items-center justify-between gap-8">
+          <div className="max-w-2xl">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <span className="eyebrow">Command center</span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/15 bg-emerald-300/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300">
+                <span className="live-dot" /> Live monitoring
+              </span>
+            </div>
+            <h1 id="command-center-title" className="max-w-xl text-3xl font-semibold tracking-[-0.04em] text-slate-100 sm:text-[2.6rem] sm:leading-[1.08]">
+              Evidence you can <span className="bg-gradient-to-r from-blue-300 to-cyan-200 bg-clip-text text-transparent">trust.</span>
+            </h1>
+            <p className="mt-3 max-w-xl text-xs leading-6 text-slate-400 sm:text-sm">
+              Real-time medical image integrity, AI forensics, and blockchain custody in one calm operational view.
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              <button
+                onClick={() => onViewChange("upload-image")}
+                className="group inline-flex items-center gap-2 rounded-xl bg-blue-500 px-3.5 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-400"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Secure an image
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </button>
+              <button
+                onClick={() => fetchData(true)}
+                disabled={refreshing}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-600/70 bg-slate-900/45 px-3.5 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-500 hover:bg-slate-800/70 disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                Refresh telemetry
+              </button>
+            </div>
+          </div>
+
+          <div className="relative hidden h-[13rem] w-[13rem] flex-shrink-0 items-center justify-center lg:flex" aria-hidden="true">
+            <div className="hero-orbit">
+              <div className="hero-orbit-core"><ShieldCheck className="h-8 w-8 text-white" strokeWidth={1.7} /></div>
+              <span className="absolute left-[7%] top-[30%] h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_12px_rgba(48,213,208,0.9)]" />
+              <span className="absolute bottom-[18%] right-[11%] h-1 w-1 rounded-full bg-blue-200 shadow-[0_0_10px_rgba(147,197,253,0.9)]" />
+            </div>
+            <div className="hero-scanline" />
+            <div className="absolute bottom-0 right-0 rounded-xl border border-emerald-300/15 bg-slate-950/65 px-3 py-2 backdrop-blur-md">
+              <div className="flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300"><CheckCircle2 className="h-3 w-3" /> Chain verified</div>
+              <p className="mt-1 text-[9px] text-slate-600">Last checked just now</p>
+            </div>
+          </div>
         </div>
-        <button
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          aria-label="Refresh dashboard data"
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-all cursor-pointer disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
+      </section>
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -431,7 +461,7 @@ export default function Dashboard({ token: _token, onViewChange }: DashboardProp
             return (
               <React.Fragment key={step.label}>
                 <div
-                  className={`flex flex-col items-center gap-1.5 flex-shrink-0 px-3 py-2.5 rounded-xl border ${step.border} ${step.bg} min-w-[80px] group transition-all hover:brightness-110`}
+                  className={`lifecycle-step flex flex-col items-center gap-1.5 flex-shrink-0 px-3 py-2.5 rounded-xl border ${step.border} ${step.bg} min-w-[80px] group transition-all hover:brightness-110`}
                 >
                   <Icon className={`h-4 w-4 ${step.color}`} />
                   <span className={`text-[9px] font-bold tracking-widest uppercase ${step.color}`}>
@@ -553,7 +583,7 @@ export default function Dashboard({ token: _token, onViewChange }: DashboardProp
               </h3>
             </div>
             <button
-              onClick={() => onViewChange("blockchain")}
+              onClick={() => onViewChange("blockchain-audit")}
               aria-label="View full blockchain ledger"
               className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors font-semibold cursor-pointer flex items-center gap-1"
             >
