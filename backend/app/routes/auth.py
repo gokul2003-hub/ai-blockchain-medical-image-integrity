@@ -20,6 +20,7 @@ from app.auth import (
     SAFE_PUBLIC_ROLE,
     PRIVILEGED_ROLES,
     get_password_hash,
+    validate_password_policy,
     authenticate_user,
     create_access_token,
     create_session,

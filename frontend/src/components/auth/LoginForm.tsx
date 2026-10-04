@@ -45,6 +45,47 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   const [selectedRoleKey, setSelectedRoleKey] = useState<string>("doctor");
   const [showForgotModal, setShowForgotModal] = useState<boolean>(false);
 
+  // Secure Registration State (role-specific identity)
+  const [regRole, setRegRole] = useState<"doctor" | "patient" | "researcher" | "admin">("doctor");
+  const [identityId, setIdentityId] = useState<string>("");
+  const [institution, setInstitution] = useState<string>("");
+  const [verifyState, setVerifyState] = useState<"idle" | "verifying" | "verified" | "failed">("idle");
+  const [verifyMsg, setVerifyMsg] = useState<string | null>(null);
+
+  const identityFieldLabel =
+    regRole === "doctor" ? "Doctor ID" :
+    regRole === "patient" ? "Patient ID" :
+    regRole === "researcher" ? "Researcher ID" : "Admin ID";
+  const identityPlaceholder =
+    regRole === "doctor" ? "DR-123456" :
+    regRole === "patient" ? "PT-123456" :
+    regRole === "researcher" ? "RES-123456" : "ADM-123456";
+
+  // Server-side identity verification (never trust client-side checks)
+  const handleVerifyIdentity = async () => {
+    if (!identityId.trim() || verifyState === "verifying") return;
+    setVerifyState("verifying");
+    setVerifyMsg(null);
+    try {
+      const res = await fetch("/api/auth/verify-identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: regRole, identity_id: identityId.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setVerifyState("verified");
+        setVerifyMsg("Identity verified by MediSecure registry.");
+      } else {
+        setVerifyState("failed");
+        setVerifyMsg(data.message || "Unable to verify the supplied identity information.");
+      }
+    } catch {
+      setVerifyState("failed");
+      setVerifyMsg("Unable to reach the verification service. Please try again.");
+    }
+  };
+
   // Role info selector fills testing presets for convenience
   const handleSelectRolePreset = (roleKey: string) => {
     setSelectedRoleKey(roleKey);
@@ -75,6 +116,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
     try {
       if (activeTab === "register") {
+        if (verifyState !== "verified") {
+          setError("Please verify your identity ID against the registry before creating the account.");
+          setLoading(false);
+          return;
+        }
         if (password !== confirmPassword) {
           setError("Passwords do not match.");
           setLoading(false);
@@ -86,17 +132,46 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           return;
         }
 
-        // Call real backend registration API
-        await apiService.register({
+        // Call role-specific backend registration endpoint (server-side identity validation)
+        const regEndpoint =
+          regRole === "doctor" ? "/api/auth/register/doctor" :
+          regRole === "patient" ? "/api/auth/register/patient" :
+          regRole === "researcher" ? "/api/auth/register/researcher" :
+          "/api/auth/register/admin";
+
+        const regPayload: Record<string, unknown> = {
+          identity_id: identityId.trim(),
           username: username.trim(),
           email: email.trim(),
           password,
-          role: "patient",
+        };
+        if (regRole === "researcher" || regRole === "admin") {
+          regPayload.institution = institution.trim() || "Unspecified Institution";
+        }
+
+        await fetch(regEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(regPayload),
+        }).then(async (r) => {
+          if (!r.ok) {
+            const body = await r.json().catch(() => ({}));
+            const detail = typeof body.detail === "string"
+              ? body.detail
+              : Array.isArray(body.detail)
+                ? body.detail.map((d: any) => d.msg).join(", ")
+                : "Unable to verify the supplied identity information.";
+            throw new Error(detail);
+          }
+          return r.json();
         });
 
-        setSuccessMsg("Account successfully provisioned. Please sign in with your credentials.");
+        setSuccessMsg("Identity verified and account provisioned. Please sign in.");
         setActiveTab("signin");
         setConfirmPassword("");
+        setIdentityId("");
+        setVerifyState("idle");
+        setVerifyMsg(null);
       } else {
         // Call real backend login API
         const data = await apiService.login({
@@ -252,7 +327,117 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
         {/* Authentication Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          
+
+          {/* Role-Specific Registration Fields (Register tab only) */}
+          {activeTab === "register" && (
+            <div className="space-y-3 p-3 rounded-xl bg-slate-50/80 border border-slate-200">
+              {/* Role Selection Cards */}
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Select account role">
+                {([
+                  ["doctor", "Doctor / Radiologist"],
+                  ["admin", "Hospital Administrator"],
+                  ["researcher", "Researcher"],
+                  ["patient", "Patient"],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="radio"
+                    aria-checked={regRole === key}
+                    onClick={() => {
+                      setRegRole(key);
+                      setVerifyState("idle");
+                      setVerifyMsg(null);
+                      setIdentityId("");
+                    }}
+                    className={`px-2.5 py-2 rounded-lg text-[11px] font-semibold border transition-all focus:outline-none focus:ring-2 focus:ring-cyan-500/40 ${
+                      regRole === key
+                        ? "bg-cyan-600 text-white border-cyan-600 shadow-sm"
+                        : "bg-white text-slate-600 border-slate-200 hover:border-cyan-400 hover:text-cyan-700"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Role-Specific Identity ID + live verification */}
+              <div>
+                <label htmlFor="identity-id" className="text-xs font-semibold text-slate-700 block mb-1">
+                  {identityFieldLabel} <span className="text-cyan-600">(verified server-side)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="identity-id"
+                    type="text"
+                    value={identityId}
+                    onChange={(e) => {
+                      setIdentityId(e.target.value.toUpperCase());
+                      setVerifyState("idle");
+                      setVerifyMsg(null);
+                    }}
+                    placeholder={identityPlaceholder}
+                    className="flex-1 px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyIdentity}
+                    disabled={!identityId.trim() || verifyState === "verifying"}
+                    className="px-3 py-2.5 rounded-xl text-[11px] font-semibold bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                  >
+                    {verifyState === "verifying" ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying…</>
+                    ) : (
+                      "Verify Identity"
+                    )}
+                  </button>
+                </div>
+
+                {/* Verification Status (backend-confirmed only) */}
+                {verifyState === "verified" && (
+                  <p className="mt-1.5 text-[11px] text-emerald-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Identity Verified
+                  </p>
+                )}
+                {verifyState === "failed" && verifyMsg && (
+                  <p className="mt-1.5 text-[11px] text-red-600 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {verifyMsg}
+                  </p>
+                )}
+                {verifyState === "verifying" && (
+                  <p className="mt-1.5 text-[11px] text-cyan-700 flex items-center gap-1.5">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Contacting identity registry…
+                  </p>
+                )}
+              </div>
+
+              {/* Institution (Researcher / Admin only) */}
+              {(regRole === "researcher" || regRole === "admin") && (
+                <div>
+                  <label htmlFor="reg-institution" className="text-xs font-semibold text-slate-700 block mb-1">
+                    Institution
+                  </label>
+                  <input
+                    id="reg-institution"
+                    type="text"
+                    required
+                    value={institution}
+                    onChange={(e) => setInstitution(e.target.value)}
+                    placeholder="e.g. Metro General Hospital"
+                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 transition-all"
+                  />
+                </div>
+              )}
+
+              {regRole === "admin" && (
+                <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 leading-snug">
+                  Administrator accounts require a pre-provisioned Admin ID and institutional authorization.
+                  Self-service signup is not permitted.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Username or Email Input */}
           <div>
             <div className="flex items-center justify-between mb-1">
