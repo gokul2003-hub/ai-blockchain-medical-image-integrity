@@ -1,25 +1,22 @@
-# BUILD_REPORT.md — Phase 1: Backend + Auth (DID/VC/RBAC/Time-bound Access)
+# BUILD_REPORT.md — Phase 2: 4D Chen + AES-256 encrypt/decrypt
 
 ## Phase Summary
-**P1 — Backend + Auth (DID/VC/RBAC/Time-bound Access)** — **COMPLETE**
+**P2 — 4D Chen Hyperchaotic System + AES-256-GCM** — **COMPLETE**
 
-All core authentication, authorization, decentralized identity, and consent infrastructure is implemented, tested, and passing.
+The 4D Chen hyperchaotic permutation + XOR diffusion layer and AES-256-GCM authenticated encryption pipeline is fully implemented, tested, and verified.
 
 ---
 
-## Files Changed / Implemented (Key Files)
+## Files Implemented / Verified
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `backend/app/auth.py` | JWT, refresh tokens, bcrypt password hashing, MFA TOTP, session rotation, lockout | ✅ Verified |
-| `backend/app/did.py` | W3C DID documents, Verifiable Credentials (ECDSA + ML-DSA-65), key derivation from master key | ✅ Verified |
-| `backend/app/identity.py` | Identity provisioning, schema migration, public projection, credential backfill | ✅ Verified |
-| `backend/app/authorization.py` | Resource-level authorization (consent, emergency break-glass, DID enforcement opt-in) | ✅ Verified |
-| `backend/app/models.py` | SQLAlchemy models: User, Hospital, Permission, ConsentGrant, DID fields, AuditLog, etc. | ✅ Verified |
-| `backend/app/routes/auth.py` | `/register`, `/provision-user`, `/login`, `/refresh`, `/mfa/*`, `/logout`, `/me` | ✅ Verified |
-| `backend/app/routes/permissions.py` | Permission grants, fine-grained consent, revoke, emergency override, FHIR export | ✅ Verified |
-| `backend/app/config.py` | Environment-driven settings, secret validation, production hardening | ✅ Verified |
-| `backend/app/main.py` | FastAPI app, CORS, logging, startup seeding, WebSocket, DB migration on boot | ✅ Verified |
+| `backend/app/hyperchaos.py` | 4D Chen system (RK4 integration), permutation, keystream, combined permute+diffuse, exact inverses | ✅ Verified |
+| `backend/app/crypto.py` | SHA-3 hashing, AES-256-GCM DEK/KEK wrapping, `encrypt_image` / `decrypt_image` pipeline with Chen stage | ✅ Verified |
+| `tests/test_chen_crypto_pipeline.py` | 42 tests: bijection, diffusion, inverse, round-trip, corruption detection, determinism, API compatibility | ✅ 42/42 PASSED |
+| `tests/test_hyperchaos.py` | 22 tests: initial conditions, integration, permutation, keystream, round-trip, encryption pipeline | ✅ 22/22 PASSED |
+| `tests/test_crypto.py` | 10 tests: SHA-3/SHA-256, AES-GCM encryption/decryption, tamper rejection, image flow | ✅ 10/10 PASSED |
+| `tests/test_end_to_end_framework.py` | 5 tests: full lifecycle integration | ✅ 5/5 PASSED |
 
 ---
 
@@ -27,49 +24,43 @@ All core authentication, authorization, decentralized identity, and consent infr
 
 ```bash
 cd backend
-.\venv\Scripts\python -m pytest tests/test_security_auth.py -v          # 6/6 PASSED
-.\venv\Scripts\python -m pytest tests/test_did_vc_integration.py -v      # 50/50 PASSED
-.\venv\Scripts\python -m pytest tests/test_authorization_consent.py -v   # 4/4 PASSED
-.\venv\Scripts\python -m pytest tests/test_production_security.py -v     # 82/82 PASSED
-.\venv\Scripts\python -m pytest tests/test_end_to_end_framework.py -v    # 5/5 PASSED
+.\venv\Scripts\python -m pytest tests/test_chen_crypto_pipeline.py -v      # 42/42 PASSED
+.\venv\Scripts\python -m pytest tests/test_hyperchaos.py tests/test_crypto.py -v  # 32/32 PASSED
+.\venv\Scripts\python -m pytest tests/test_end_to_end_framework.py -v      # 5/5 PASSED
 ```
-
-All tests passing (total 147 tests across P1-relevant suites).
 
 ---
 
-## Verification Against Requirements
+## Verification Against Pipeline Requirements
 
-| Pipeline Requirement | Backend Evidence | Status |
-|----------------------|------------------|--------|
-| **Login (DID + Verifiable Credentials)** | `auth.py::login_user`, `did.py::create_platform_role_credential`, `identity.py::provision_identity` | ✅ COMPLETE |
-| **RBAC (role-based access)** | `auth.py::RoleChecker`, `routes/auth.py::admin_provision_guard`, `authorization.py` | ✅ COMPLETE |
-| **Time-bound access (ConsentGrant starts_at/expires_at)** | `models.py::ConsentGrant`, `permissions.py::create_fine_grained_consent`, `authorization.py::authorize_image_action` | ✅ COMPLETE |
-| **MFA TOTP + recovery codes** | `auth.py::verify_mfa_code`, `generate_recovery_codes`, `/mfa/setup`, `/mfa/enable` | ✅ COMPLETE |
-| **Session rotation + revocation** | `auth.py::create_session`, `rotate_session`, `revoke_all_sessions`, token_version | ✅ COMPLETE |
-| **No private keys in DB** | `did.py::_derive_subject_keypair`, `identity.py::public_identity_view` (allow-list) | ✅ COMPLETE |
-| **Credential makes no medical license claim** | `did.py::create_platform_role_credential` (attestation: "system_issued") | ✅ COMPLETE |
-| **DID/VC verification (ECDSA + PQC ML-DSA-65)** | `did.py::verify_credential_detailed`, `pqc_engine.verify_ml_dsa` | ✅ COMPLETE |
-| **Emergency break-glass (server-side policy)** | `authorization.py::authorize_emergency_access`, `permissions.py::emergency_access_override` | ✅ COMPLETE |
-| **Audit logging with actor DID** | `authorization.py::write_audit`, `AuditLog` model | ✅ COMPLETE |
+| Pipeline Requirement | Implementation | Test Evidence | Status |
+|----------------------|----------------|---------------|--------|
+| **4D Chen hyperchaotic permutation** | `hyperchaos.py::ChenHyperchaosPermutation._permutation_from_trajectory` (argsort of z-trajectory) | `test_permutation_is_valid_bijection`, `test_inverse_permutation_restores_original` | ✅ COMPLETE |
+| **XOR diffusion (keystream from w-component)** | `hyperchaos.py::_keystream_from_trajectory` (fractional part of \|w\|) | `test_keystream_length_and_range`, `test_inverse_diffusion_restores_original` | ✅ COMPLETE |
+| **Combined permute+diffuse in one RK4 pass** | `hyperchaos.py::permute_and_diffuse` | `test_combined_stage_inverse_restores_original` | ✅ COMPLETE |
+| **Deterministic IC from key via SHA-256** | `hyperchaos.py::ChenHyperchaosPermutation.__init__` (32-byte digest → 4×8-byte IC) | `test_initial_conditions_deterministic`, `test_different_keys_different_initial_conditions` | ✅ COMPLETE |
+| **AES-256-GCM authenticated encryption** | `crypto.py::encrypt_payload` / `decrypt_payload` (12-byte nonce, 16-byte tag) | `test_aes_256_gcm_payload_encryption_and_decryption`, `test_aes_gcm_tampered_ciphertext_rejected` | ✅ COMPLETE |
+| **KEK/DEK key wrapping (HKDF from master key)** | `crypto.py::LocalKeyEncryptionProvider` | `test_aes_gcm_tampered_wrapped_key_rejected` | ✅ COMPLETE |
+| **SHA-3-256 integrity hash (not SHA-2)** | `crypto.py::sha3_hash` (hashlib.sha3_256) | `test_sha3_and_sha256_hashes`, `test_single_pixel_change_changes_integrity_hash` | ✅ COMPLETE |
+| **Pipeline: Chen → AES-GCM → metadata** | `crypto.py::encrypt_image` / `decrypt_image` | `test_encrypt_and_decrypt_image_flow`, `test_round_trip_returns_identical_bytes` | ✅ COMPLETE |
+| **Exact inverse: diffuse⁻¹ → permute⁻¹** | `crypto.py::decrypt_image` (checks `chen_diffusion` marker) | `test_combined_stage_inverse_restores_original`, `test_inverse_with_wrong_seed_does_not_restore` | ✅ COMPLETE |
+| **Avalanche: 1 byte change → different permutation+keystream** | `crypto.py::_chen_pipeline_seed` binds to plaintext hash | `test_single_pixel_change_changes_chaotic_stage_completely` | ✅ COMPLETE |
+| **Corruption detection (tag, nonce, wrapped DEK, AAD, hash)** | `crypto.py::decrypt_payload` + `decrypt_image` hash check | `test_ciphertext_byte_flip_is_rejected`, `test_truncated_ciphertext_is_rejected`, `test_wrong_plaintext_hash_is_rejected` | ✅ COMPLETE |
+| **Backward compatibility (pre-diffusion objects)** | `crypto.py::decrypt_image` handles `hyperchaos` marker | `test_legacy_permutation_only_object_still_decrypts` | ✅ COMPLETE |
 
 ---
 
-## Test Evidence (Real Output)
+## Correctness Checks (Must Pass)
 
-```
-tests/test_security_auth.py::test_public_registration_locks_role_to_patient PASSED
-tests/test_security_auth.py::test_password_policy_rejection PASSED
-tests/test_security_auth.py::test_login_flow_and_jwt_tokens PASSED
-tests/test_security_auth.py::test_provision_user_requires_admin PASSED
-tests/test_security_auth.py::test_mfa_setup_and_verification PASSED
-tests/test_security_auth.py::test_logout_revokes_jwt PASSED
-
-tests/test_did_vc_integration.py  50 passed
-tests/test_authorization_consent.py  4 passed
-tests/test_production_security.py  82 passed
-tests/test_end_to_end_framework.py  5 passed
-```
+| Check | Result | Evidence |
+|-------|--------|----------|
+| `decrypt(encrypt(image)) == original image` (hash match) | ✅ PASS | `test_round_trip_returns_identical_bytes`, `test_round_trip_dicom_style_payload` |
+| Hash algorithm is SHA-3 (not SHA-2) | ✅ PASS | `crypto.py::sha3_hash` uses `hashlib.sha3_256`; `test_sha3_and_sha256_hashes` |
+| Wrong key → decryption fails | ✅ PASS | `test_wrong_master_key_cannot_decrypt`, `test_inverse_with_wrong_seed_does_not_restore` |
+| Tampered ciphertext → rejected by AES-GCM tag | ✅ PASS | `test_ciphertext_byte_flip_is_rejected`, `test_aes_gcm_tampered_ciphertext_rejected` |
+| Deterministic: same key + same image → same ciphertext | ✅ PASS | `test_keystream_is_deterministic`, `test_combined_stage_is_deterministic` |
+| Single pixel change → completely different chaotic stage | ✅ PASS | `test_single_pixel_change_changes_chaotic_stage_completely` |
+| NPCR/UACI metrics computed correctly | ✅ PASS | `test_crypto_research_metrics`, `calculate_npcr_uaci` |
 
 ---
 
@@ -77,11 +68,10 @@ tests/test_end_to_end_framework.py  5 passed
 
 | Item | Severity | Notes |
 |------|----------|-------|
-| `DID_ENFORCE_CREDENTIAL_ON_IMAGE_ACCESS` defaults to `False` | Low | Opt-in per config; existing RBAC/consent remains authority. Enable after backfill. |
-| Patients receive no platform role credential | By design | `CREDENTIAL_ROLES` excludes "patient"; only identity (DID) is issued. |
-| Hardhat test private key hash check only in production | Info | `config.py` rejects well-known test key in production. |
-| `.dev-secrets.json` auto-generated in dev | Info | Never committed; `config.py` rejects dev secrets in production. |
-| Frontend CORS origin must be `http://localhost:5173` or `127.0.0.1:5173` | Config | Backend `ALLOWED_ORIGINS` enforces this; other ports blocked by CORS. |
+| Chen parameters (a=35, b=3, c=28, d=-1) are hardcoded constants | Low | Classic hyperchaotic regime; changing them would break backward compatibility. |
+| RK4 step size `_DT=0.01` and warmup `_WARMUP=1000` are fixed | Low | Deterministic across deployments; not configurable by design. |
+| Pipeline seed binds to plaintext hash (AAD) | By design | Prevents substitution attacks; changing 1 byte cascades to new permutation+keystream. |
+| AES-GCM tag is 16 bytes appended to ciphertext | Standard | `metadata["tag_location"] = "ciphertext_suffix_16_bytes"` |
 
 ---
 
@@ -89,10 +79,10 @@ tests/test_end_to_end_framework.py  5 passed
 
 ```bash
 git add -A
-git commit -m "P1: Backend + Auth (DID/VC/RBAC/Time-bound Access) — COMPLETE — 147 tests passing"
+git commit -m "P2: 4D Chen + AES-256 encrypt/decrypt — COMPLETE — 79 tests passing"
 ```
 
 ---
 
 ## Next Phase
-Proceed to **P2: 4D Chen + AES-256 encrypt/decrypt** (`backend/app/hyperchaos.py`, `backend/app/crypto.py`, `tests/test_chen_crypto_pipeline.py`).
+Proceed to **P3: SHA-3 + Digital Integrity Twin** (`backend/app/digital_twin.py`, `tests/test_integrity_evidence.py`, `backend/app/routes/images.py`).
