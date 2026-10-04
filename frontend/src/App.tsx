@@ -19,6 +19,7 @@ import UploadImage from "./views/UploadImage";
 import ImageViewer from "./views/ImageViewer";
 import IntegrityVerification from "./views/IntegrityVerification";
 import AIForensics from "./views/AIForensics";
+import ForensicStudio from "./views/ForensicStudio";
 import TamperLocalization from "./views/TamperLocalization";
 import ExplainableAI from "./views/ExplainableAI";
 import RecoveryCenter from "./views/RecoveryCenter";
@@ -291,6 +292,8 @@ export default function App() {
         return <AIForensics token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} onViewChange={setActiveView} />;
       case "tamper-localization":
         return <TamperLocalization token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} />;
+      case "forensic-studio":
+        return <ForensicStudio token={token} />;
       case "explainable-ai":
         return <ExplainableAI token={token} selectedImageId={selectedImageId} onSelectImage={setSelectedImageId} />;
       case "recovery-center":

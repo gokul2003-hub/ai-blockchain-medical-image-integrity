@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   BrainCircuit, RefreshCw, Images, AlertTriangle, ChevronLeft,
-  ScanSearch, Crosshair, Activity, Info,
+  ScanSearch, Crosshair, Activity, Info, FlaskConical,
 } from "lucide-react";
 import { apiClient, fetchProtectedBlobUrl } from "../services/api";
 import StatusBadge from "../components/StatusBadge";
@@ -269,6 +269,13 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
                 >
                   <Crosshair className="h-3.5 w-3.5" />
                   Tamper Localization
+                </button>
+                <button
+                  onClick={() => onViewChange("forensic-studio")}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 rounded-xl cursor-pointer transition-all"
+                >
+                  <FlaskConical className="h-3.5 w-3.5" />
+                  Forensic Studio
                 </button>
                 <button
                   onClick={() => onViewChange("explainable-ai")}

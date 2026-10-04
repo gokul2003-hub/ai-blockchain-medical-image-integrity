@@ -23,7 +23,7 @@ from app.auth import get_password_hash
 from app.ai_model import get_ai_model
 
 # Routers
-from app.routes import auth, hospitals, users, images, permissions, blockchain, analytics
+from app.routes import auth, hospitals, users, images, permissions, blockchain, analytics, forensic_demo
 
 # --- 1. Configure Loguru Structured Logging ---
 logger.remove() # Remove default handler
@@ -113,7 +113,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 # --- 6. Include API Module Routes (Versioned under /api/v1 and legacy /api) ---
-api_routers = [auth.router, hospitals.router, users.router, images.router, permissions.router, blockchain.router, analytics.router]
+api_routers = [auth.router, hospitals.router, users.router, images.router, permissions.router, blockchain.router, analytics.router, forensic_demo.router]
 for r in api_routers:
     app.include_router(r, prefix="/api/v1")
     app.include_router(r, prefix="/api", include_in_schema=False)

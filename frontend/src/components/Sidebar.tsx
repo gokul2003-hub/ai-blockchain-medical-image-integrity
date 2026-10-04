@@ -67,6 +67,7 @@ const allSections: NavSection[] = [
       { id: "integrity-verification", label: "Integrity Verification", icon: ShieldCheck },
       { id: "tamper-detection", label: "Tamper Detection", icon: ScanSearch },
       { id: "tamper-localization", label: "Tamper Localization", icon: Crosshair },
+      { id: "forensic-studio", label: "Forensic Studio", icon: BrainCircuit },
       { id: "explainable-ai", label: "Explainable AI", icon: BrainCircuit },
     ],
     roles: ["super_admin", "hospital_admin", "doctor", "radiologist"],
