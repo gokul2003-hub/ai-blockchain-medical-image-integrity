@@ -1,0 +1,19 @@
+{
+  "user": "superadmin",
+  "role": "super_admin",
+  "doctors_list_status": 200,
+  "doctors_count": 2,
+  "patients_list_status": 200,
+  "patients_count": 28,
+  "blockchain_blocks_status": 200,
+  "blockchain_blocks_count": 576,
+  "blockchain_verify_chain_status": 200,
+  "blockchain_verify_chain_result": {
+    "status": "SUCCESS",
+    "message": "Blockchain ledger integrity verified successfully. All block links are valid.",
+    "block_count": 576
+  },
+  "hospitals_status": 200,
+  "analytics_dashboard_status": 200,
+  "consents_management_status": 200
+}

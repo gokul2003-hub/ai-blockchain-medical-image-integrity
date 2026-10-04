@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&amp;family=Manrope:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"surface":"#fbf9f6","on-secondary-container":"#406d58","primary-container":"#2e6f7e","on-secondary-fixed":"#002114","secondary-container":"#bceed3","inverse-on-surface":"#f2f0ed","on-tertiary-fixed-variant":"#4a3d7b","tertiary":"#524584","on-tertiary-fixed":"#1e0e4d","secondary-fixed":"#bceed3","inverse-surface":"#30312f","secondary":"#3a6752","surface-bright":"#fbf9f6","on-error":"#ffffff","on-secondary-fixed-variant":"#224f3c","background":"#fbf9f6","on-tertiary-container":"#eae1ff","on-primary-fixed":"#001f26","surface-variant":"#e4e2df","tertiary-fixed":"#e7deff","surface-container-highest":"#e4e2df","primary-fixed-dim":"#92d0e1","on-background":"#1b1c1a","surface-dim":"#dbdad7","on-secondary":"#ffffff","error":"#ba1a1a","on-tertiary":"#ffffff","surface-container-low":"#f5f3f0","surface-tint":"#236675","on-surface-variant":"#40484b","error-container":"#ffdad6","outline":"#70797b","on-primary-container":"#b6efff","secondary-fixed-dim":"#a1d1b8","outline-variant":"#bfc8cb","primary-fixed":"#aeecfe","surface-container":"#efeeeb","primary":"#095765","surface-container-high":"#eae8e5","surface-container-lowest":"#ffffff","on-surface":"#1b1c1a","on-error-container":"#93000a","on-primary-fixed-variant":"#004e5c","inverse-primary":"#92d0e1","tertiary-container":"#6b5d9e","tertiary-fixed-dim":"#ccbeff","on-primary":"#ffffff"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"space-2xl":"3rem","space-xl":"2rem","margin-mobile":"1rem","space-lg":"1.5rem","space-sm":"0.5rem","space-3xl":"4.5rem","gutter-mobile":"0.75rem","gutter":"1.5rem","space-md":"1rem","margin-desktop":"3rem","gutter-desktop":"2rem","space-xs":"0.25rem","space-2xs":"0.125rem","margin":"1.5rem"},"fontFamily":{"body-md":["Public Sans"],"body-sm":["Public Sans"],"headline-xl":["Manrope"],"display-lg-mobile":["Manrope"],"body-lg":["Public Sans"],"label-md":["Public Sans"],"label-lg":["Public Sans"],"display-lg":["Manrope"],"headline-xl-mobile":["Manrope"],"code-sm":["Public Sans"],"headline-sm":["Manrope"],"headline-lg":["Manrope"],"label-sm":["Public Sans"],"headline-md":["Manrope"]},"fontSize":{"body-md":["0.875rem",{"lineHeight":"1.375rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1.125rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"display-lg-mobile":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"body-lg":["1rem",{"lineHeight":"1.625rem","fontWeight":"400"}],"label-md":["0.75rem",{"lineHeight":"1rem","letterSpacing":"0.02em","fontWeight":"600"}],"label-lg":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"0.01em","fontWeight":"600"}],"display-lg":["2.75rem",{"lineHeight":"3.25rem","letterSpacing":"-0.025em","fontWeight":"600"}],"headline-xl-mobile":["1.625rem",{"lineHeight":"2.125rem","letterSpacing":"-0.015em","fontWeight":"600"}],"code-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-sm":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.005em","fontWeight":"500"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-sm":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.04em","fontWeight":"600"}],"headline-md":["1.25rem",{"lineHeight":"1.75rem","letterSpacing":"-0.01em","fontWeight":"600"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased min-h-screen"><aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-lowest z-40 flex flex-col shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 px-space-lg flex items-center gap-space-sm bg-surface-container-lowest"><img alt="MediSecure AI Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1WlfSVbhhj2LpYnUrM-_7Oh15mKwLsXSJPkl38PtN4zD1fNrQ_8Ylh1pq4-kbXw1-nStWPhUYyGEI917rBORWpYgzW-v5Uc2k38SSiSLtYzBwJd-0NSdAogTcL6HyG363Il4TU_d1cshVxaaogFQIf07T-E_aC9ekv0mY0gTdL2WmKLxyxHYwPCVV8jhgG9Sz1Xj6-BXGmLkmTIjFJbRUZ0ZGSooozoixlZVLHuwx_-F8WHRj8VJmWux0aq"/><div class="flex flex-col"><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">MediSecure AI</span><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Clinical Integrity Platform</span></div></div><div class="px-space-md py-space-sm"><div class="px-space-sm py-space-xs font-label-sm text-label-sm uppercase tracking-wider text-outline">Clinical Workspace</div></div><nav class="flex-1 px-space-md space-y-space-2xs overflow-y-auto" data-active-classes="bg-surface-container text-primary font-semibold"><a aria-current="page" class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg transition-colors bg-surface-container text-primary font-semibold" data-path="doctor-dashboard" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span>Doctor Dashboard</span></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="assigned-images" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">folder_shared</span><span>Assigned Images</span></div><span class="px-space-xs py-space-2xs rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm">14</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="image-review-and-verification" href="#"><span class="material-symbols-outlined text-[20px]">fact_check</span><span>Image Review &amp; Verification</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="ai-tamper-forensics" href="#"><span class="material-symbols-outlined text-[20px]">biotech</span><span>AI Tamper Forensics</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="risk-analysis" href="#"><span class="material-symbols-outlined text-[20px]">crisis_alert</span><span>Risk Analysis</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="self-recovery-studio" href="#"><span class="material-symbols-outlined text-[20px]">healing</span><span>Self-Recovery Studio</span></a><div class="pt-space-md pb-space-xs px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-outline">Governance &amp; Trust</div><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="blockchain-audit-and-reports" href="#"><span class="material-symbols-outlined text-[20px]">verified</span><span>Blockchain Audit &amp; Reports</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="patient-consent-directory" href="#"><span class="material-symbols-outlined text-[20px]">shield_person</span><span>Patient Consent Directory</span></a></nav><div class="p-space-md bg-surface-container-lowest"><div class="p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-xs"><div class="flex items-center justify-between"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase">DICOM Node</span><span class="w-2 h-2 rounded-full bg-secondary"></span></div><span class="font-body-sm text-body-sm font-code-sm text-on-surface">AE_TITLE: RAD_STATION_9</span><span class="font-label-sm text-label-sm text-on-surface-variant">TLS 1.3 Strict Mutual Auth</span></div></div></aside><div class="pl-72 flex flex-col min-h-screen"><header class="fixed top-0 left-72 right-0 h-16 z-30 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 w-full px-space-xl flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-lg"><div class="relative flex items-center"><div class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container text-on-surface"><span class="material-symbols-outlined text-[18px] text-primary">stethoscope</span><span class="font-label-md text-label-md">Doctor / Radiologist</span><span class="material-symbols-outlined text-[16px] text-on-surface-variant">expand_more</span></div></div><div class="flex items-center gap-space-xs px-space-md py-space-2xs rounded-full bg-secondary-fixed text-on-secondary-fixed"><span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span><span class="font-label-sm text-label-sm tracking-wide">Ledger Synced • Node #428</span></div></div><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs"><button aria-label="Notifications" class="p-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors relative" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span></button><button aria-label="Audit Ledger Search" class="p-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">fingerprint</span></button></div><div class="h-8 w-px bg-surface-variant"></div><div class="flex items-center gap-space-sm"><div class="text-right hidden sm:flex flex-col"><span class="font-label-md text-label-md text-on-surface leading-tight">Dr. Eleanor Vance, MD</span><span class="font-label-sm text-label-sm text-on-surface-variant">Lead Thoracic Radiologist</span></div><img alt="Profile" class="w-8 h-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiouShwD5op2XqHVJYRwDR91-PBjeNrwUZH8QqRGivU9ReqjDihUI7O3KXYv2agOD5daKqnOeOfMmejWtBHBp4oS61QT236WGouXJB2aqMX6OmeFqri7IAuhtQB7LqgnMQRyG9-5mBHFB7qdaum8R-d8KG-X9zZZgjF28RXZShE1tIdBiy-WypphDmVn77rIv6hUlR80tTsWqSk7zz3BJGSSomVY_Hag__n9IXhnivc4XIhY7tTvQV9Q"/></div></div></div></header><main class="flex-1 w-full pt-16 bg-surface px-space-xl py-space-xl"><div class="flex flex-col w-full space-y-space-xl">
+<!-- Top Editorial Header & Workspace Context -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-space-lg pb-space-xs">
+<div class="space-y-space-2xs">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-space-2xs rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm uppercase tracking-wider">Node #428 • Active Cluster</span>
+<span class="text-outline-variant">•</span>
+<span class="font-code-sm text-code-sm text-on-surface-variant font-medium">STATION_KEY // SHA3-512-VERIFIED</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Good morning, Dr. Sharma</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl">
+        Radiology Department • Diagnostic Integrity &amp; Continuous Ledger Verification. All ingested DICOM telemetry validated against tamper-proof provenance blocks.
+      </p>
+</div>
+<!-- Quick Filter Pill Navigation -->
+<div class="flex items-center flex-wrap gap-space-xs bg-surface-container-low p-space-2xs rounded-xl shadow-sm">
+<button class="px-space-md py-space-xs rounded-lg font-label-md text-label-md bg-surface-container-lowest text-primary shadow-sm transition-all flex items-center gap-space-xs" type="button">
+<span>All Assigned</span>
+<span class="px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface font-code-sm text-code-sm">18</span>
+</button>
+<button class="px-space-md py-space-xs rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all flex items-center gap-space-xs" type="button">
+<span>Requires Integrity Check</span>
+<span class="px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-code-sm text-code-sm">4</span>
+</button>
+<button class="px-space-md py-space-xs rounded-lg font-label-md text-label-md text-error hover:bg-error-container/40 transition-all flex items-center gap-space-xs" type="button">
+<span class="w-1.5 h-1.5 rounded-full bg-error animate-pulse"></span>
+<span>Suspected Tampering</span>
+<span class="px-1.5 py-0.5 rounded-full bg-error-container text-on-error-container font-code-sm text-code-sm font-semibold">2</span>
+</button>
+<button class="px-space-md py-space-xs rounded-lg font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all flex items-center gap-space-xs" type="button">
+<span>Ready for Sign-off</span>
+<span class="px-1.5 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-code-sm text-code-sm">12</span>
+</button>
+</div>
+</section>
+<!-- Metric Overview Cards (Tactile Ivory & Controlled Accents) -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-lg">
+<!-- Card 1: Assigned Studies -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Assigned Studies Today</span>
+<div class="flex items-baseline gap-space-xs pt-space-xs">
+<span class="font-display-lg text-display-lg text-on-surface tracking-tight font-semibold">18</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-normal">scans queued</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-xl bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[22px]">medical_services</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">3 awaiting neural review</span>
+<span class="px-space-xs py-space-2xs rounded bg-surface-container font-label-sm text-label-sm text-on-surface font-semibold">+4 vs yesterday</span>
+</div>
+</div>
+<!-- Card 2: Integrity Status -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Integrity Status</span>
+<div class="flex items-baseline gap-space-xs pt-space-xs">
+<span class="font-display-lg text-display-lg text-secondary tracking-tight font-semibold">94.4%</span>
+<span class="font-body-sm text-body-sm text-secondary font-medium">SHA-3 Match</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-xl bg-secondary-container/40 flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[22px]">verified_user</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Dual-ledger validated</span>
+<span class="px-space-xs py-space-2xs rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold">Ledger Synced</span>
+</div>
+</div>
+<!-- Card 3: Tamper Alerts Flagged -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-error">Tamper Alerts Flagged</span>
+<div class="flex items-baseline gap-space-xs pt-space-xs">
+<span class="font-display-lg text-display-lg text-error tracking-tight font-semibold">02</span>
+<span class="font-body-sm text-body-sm text-error font-medium">anomalous pixel beds</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-xl bg-error-container/60 flex items-center justify-center text-error">
+<span class="material-symbols-outlined text-[22px]">warning</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Swin-UNet &amp; SRM filter</span>
+<span class="px-space-xs py-space-2xs rounded bg-error-container text-on-error-container font-label-sm text-label-sm font-semibold">Action Required</span>
+</div>
+</div>
+<!-- Card 4: Self-Recovery Queue -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm hover:shadow-md transition-shadow relative overflow-hidden flex flex-col justify-between">
+<div class="flex items-start justify-between">
+<div class="space-y-space-2xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Self-Recovery Studio</span>
+<div class="flex items-baseline gap-space-xs pt-space-xs">
+<span class="font-display-lg text-display-lg text-primary-container tracking-tight font-semibold">01</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant font-normal">healed slice</span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-xl bg-tertiary-fixed flex items-center justify-center text-tertiary">
+<span class="material-symbols-outlined text-[22px]">auto_fix_high</span>
+</div>
+</div>
+<div class="pt-space-md mt-space-sm flex items-center justify-between">
+<span class="font-body-sm text-body-sm text-on-surface-variant">Watermark parity recon</span>
+<span class="px-space-xs py-space-2xs rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold">Pending Sign-off</span>
+</div>
+</div>
+</section>
+<!-- Main Asymmetric Workspace Layout -->
+<div class="grid grid-cols-1 xl:grid-cols-12 gap-space-xl items-start">
+<!-- Left Column: Priority Worklist & Verification Queue (8 cols) -->
+<section class="xl:col-span-8 flex flex-col space-y-space-md">
+<!-- Panel Header Bar -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-space-md">
+<div>
+<div class="flex items-center gap-space-xs">
+<h2 class="font-headline-md text-headline-md text-on-surface">Priority Worklist &amp; Verification Queue</h2>
+<span class="px-2 py-0.5 rounded-full bg-surface-container text-on-surface font-label-sm text-label-sm">Active DICOM Stream</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Automated SRM residual analysis and bit-plane cryptographic hashing</p>
+</div>
+<div class="flex items-center gap-space-xs w-full sm:w-auto">
+<div class="relative flex-1 sm:w-56">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-outline text-[18px]">search</span>
+<input class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-surface-container-low text-on-surface text-body-sm font-body-sm focus:outline-none focus:bg-surface-container-lowest shadow-sm placeholder:text-outline transition-colors" placeholder="Filter patient or UID..." type="text"/>
+</div>
+<button class="p-2 rounded-lg bg-surface-container-low text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors" title="Filter columns" type="button">
+<span class="material-symbols-outlined text-[18px]">tune</span>
+</button>
+</div>
+</div>
+<!-- Critical Flagged Case Spotlight (Bento High-Visibility Card) -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm relative overflow-hidden">
+<div class="absolute -top-10 -right-10 w-40 h-40 bg-error-container/20 rounded-full blur-2xl pointer-events-none"></div>
+<div class="flex flex-col lg:flex-row gap-space-lg items-start">
+<!-- Edge-bounded Radiographic Thumbnail Viewport -->
+<div class="relative w-full lg:w-48 h-48 rounded-lg overflow-hidden bg-[#0D1117] flex-shrink-0 flex items-center justify-center group cursor-pointer shadow-inner">
+<img class="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity" data-alt="High contrast brain axial MRI scan cross section with subtle digital forensic grid overlay, clinical radiological presentation, neutral black and charcoal tones with slight amber diagnostic bounding indicators" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBDFhc0ticHd2BeDa_E2nTaVO1UQuiDGf9zSQpPq4JgMCR3ajW1pWOBuoRPpB6b3wWX6J1zy7uxHSC0zwItzd8BM4ky3g26OqPDLb-tR2LMd4PNg6DrZpIo8gMsaxRuDAXqtRX1muOLMGpFrA38fpdw3Ds-aHNkNC-TEdD5PlpGXZa1E4ZRl8GdH17Ekg3pDGOfMXPERBScVKR-5uyQG9seWIzBo_PaYkzSf39UNGWlRVaYDXkhZVkFzQ"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#0D1117]/90 via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-[#0D1117]/80 backdrop-blur text-[10px] font-code-sm text-surface-tint uppercase font-semibold">T2 FLAIR</div>
+<div class="absolute bottom-2 left-2 right-2 flex items-center justify-between text-surface-variant font-code-sm text-[11px]">
+<span>ROI: Subcortical</span>
+<span class="text-error font-semibold flex items-center gap-0.5">
+<span class="w-1.5 h-1.5 rounded-full bg-error"></span> Tamper Δ
+              </span>
+</div>
+</div>
+<!-- Diagnostic Details -->
+<div class="flex-1 space-y-space-sm w-full">
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-space-2xs rounded bg-error-container text-on-error-container font-label-sm text-label-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">crisis_alert</span>
+                  Tamper Suspected (p=0.91)
+                </span>
+<span class="font-code-sm text-code-sm text-outline">UID: 1.2.840.113619.2.408</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Ingested 14 min ago</span>
+</div>
+<div>
+<div class="flex items-baseline gap-space-sm">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Elena Rostova</h3>
+<span class="font-code-sm text-code-sm text-on-surface-variant">#PT-9042 • 42y F</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">
+                Brain MRI Axial T2 — Spatial Rich Model (SRM) detected localized high-frequency pixel manipulation in slice #34. Incompatible with raw acquisition noise floor.
+              </p>
+</div>
+<!-- Forensic Model Confidence Bar -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col sm:flex-row items-start sm:items-center justify-between gap-space-sm">
+<div class="space-y-1 w-full sm:w-2/3">
+<div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
+<span>Hybrid Swin-UNet Anomaly Confidence</span>
+<span class="font-code-sm font-semibold text-error">91.4%</span>
+</div>
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-error rounded-full" style="width: 91.4%;"></div>
+</div>
+</div>
+<div class="flex items-center gap-space-xs w-full sm:w-auto">
+<button class="flex-1 sm:flex-initial px-space-md py-space-xs rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow hover:bg-primary-container transition-colors flex items-center justify-center gap-1" type="button">
+<span class="material-symbols-outlined text-[16px]">biotech</span>
+<span>Forensics</span>
+</button>
+<button class="p-2 rounded-lg bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" title="Flag for Secondary Opinion" type="button">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Critical Row / Restored Scan -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm flex flex-col lg:flex-row gap-space-lg items-start">
+<div class="relative w-full lg:w-48 h-48 rounded-lg overflow-hidden bg-[#0D1117] flex-shrink-0 flex items-center justify-center group cursor-pointer shadow-inner">
+<img class="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-opacity" data-alt="Axial thoracic CT medical scan showing cross section of lung parenchyma, sharp diagnostic gray scale imagery, subtle watermark recovery matrix grid overlaid in faint sage green and white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHmi7uBItl6WBZ3u5vK4mBQPJ-dRnrNkfkbJa_x_2VfnfCVoElZPo4mp_oRu3TQx1UVUrx-nHGcDDBoUsfiZSoRplLZucmO066cFOXzGQHkZHd_vL18Tgd_JcZ7cvPSgNy1TNicDWdlHXjY-_cW6cpynsaeMRCqmhzzVDYbmhVox80Gmo1QihFJ6GlyV1_JYRqhxu4T35IM1-l4wI3_ujK47eVhK9wgZy3RzHHRLgiWiGLPzrhcgXqEg"/>
+<div class="absolute inset-0 bg-gradient-to-t from-[#0D1117]/90 via-transparent to-transparent"></div>
+<div class="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-[#0D1117]/80 backdrop-blur text-[10px] font-code-sm text-surface-tint uppercase font-semibold">Thorax CT</div>
+<div class="absolute bottom-2 left-2 right-2 flex items-center justify-between text-surface-variant font-code-sm text-[11px]">
+<span>Watermark Parity</span>
+<span class="text-secondary font-semibold flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[14px]">auto_fix_high</span> Restored
+            </span>
+</div>
+</div>
+<div class="flex-1 space-y-space-sm w-full">
+<div class="flex flex-wrap items-center justify-between gap-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="px-space-xs py-space-2xs rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">healing</span>
+                Self-Recovery Complete
+              </span>
+<span class="font-code-sm text-code-sm text-outline">UID: 1.2.840.113619.4.112</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Updated 38 min ago</span>
+</div>
+<div>
+<div class="flex items-baseline gap-space-sm">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Marcus Chen</h3>
+<span class="font-code-sm text-code-sm text-on-surface-variant">#PT-8821 • 59y M</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mt-0.5">
+              Chest CT Contrast — Embedded fragile watermark recovered 3 altered slices. Dual-tree complex wavelet transform reconstruction confirmed lossless PSNR 44.8 dB.
+            </p>
+</div>
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col sm:flex-row items-start sm:items-center justify-between gap-space-sm">
+<div class="flex items-center gap-space-md text-on-surface font-body-sm">
+<div>
+<span class="text-outline text-label-sm block">Reconstruction PSNR</span>
+<span class="font-code-sm font-semibold text-secondary">44.8 dB (Lossless)</span>
+</div>
+<div class="h-6 w-px bg-surface-variant"></div>
+<div>
+<span class="text-outline text-label-sm block">Consensus State</span>
+<span class="font-code-sm font-semibold text-primary">Ledger Validated</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs w-full sm:w-auto">
+<button class="flex-1 sm:flex-initial px-space-md py-space-xs rounded-lg bg-secondary text-on-secondary font-label-md text-label-md shadow hover:bg-secondary/90 transition-colors flex items-center justify-center gap-1" type="button">
+<span class="material-symbols-outlined text-[16px]">task_alt</span>
+<span>Doctor Sign-off</span>
+</button>
+<button class="px-space-md py-space-xs rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-variant transition-colors" type="button">
+                Compare Original
+              </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Standard Ingestion Studies List Table -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm">
+<div class="flex items-center justify-between pb-space-md">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[20px]">verified</span>
+<span class="font-headline-sm text-headline-sm text-on-surface">Verified Study Stream</span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Showing 3 of 12 verified</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="text-outline font-label-sm text-label-sm uppercase tracking-wider bg-surface-container-low/50">
+<th class="py-space-xs px-space-sm rounded-l">Patient &amp; ID</th>
+<th class="py-space-xs px-space-sm">Modality</th>
+<th class="py-space-xs px-space-sm">Ingest Timestamp</th>
+<th class="py-space-xs px-space-sm">Cryptographic Status</th>
+<th class="py-space-xs px-space-sm">Neural Confidence</th>
+<th class="py-space-xs px-space-sm text-right rounded-r">Action</th>
+</tr>
+</thead>
+<tbody class="font-body-sm text-body-sm divide-y divide-surface-container-low">
+<!-- Item 1 -->
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-space-sm px-space-sm">
+<div class="font-medium text-on-surface">Amara Okafor</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">#PT-7734 • Lumbar Spine MRI</div>
+</td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-surface-container text-on-surface font-label-sm text-label-sm">MRI-SAG-T1</span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface-variant">
+                  Today 08:42:19
+                </td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                    Verified Hash Match
+                  </span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface">
+<span class="font-semibold text-secondary">0.02%</span> anomaly risk
+                </td>
+<td class="py-space-sm px-space-sm text-right">
+<button class="px-space-sm py-space-2xs rounded-lg text-primary hover:bg-surface-container font-label-sm text-label-sm font-semibold transition-colors" type="button">
+                    Review
+                  </button>
+</td>
+</tr>
+<!-- Item 2 -->
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-space-sm px-space-sm">
+<div class="font-medium text-on-surface">Julian De Vries</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">#PT-6590 • Abdominal Pelvic CT</div>
+</td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-surface-container text-on-surface font-label-sm text-label-sm">CT-ABD-CE</span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface-variant">
+                  Today 08:15:02
+                </td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                    Verified Hash Match
+                  </span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface">
+<span class="font-semibold text-secondary">0.05%</span> anomaly risk
+                </td>
+<td class="py-space-sm px-space-sm text-right">
+<button class="px-space-sm py-space-2xs rounded-lg text-primary hover:bg-surface-container font-label-sm text-label-sm font-semibold transition-colors" type="button">
+                    Review
+                  </button>
+</td>
+</tr>
+<!-- Item 3 -->
+<tr class="hover:bg-surface-container-low/40 transition-colors">
+<td class="py-space-sm px-space-sm">
+<div class="font-medium text-on-surface">Sophia Larsson</div>
+<div class="font-code-sm text-code-sm text-on-surface-variant">#PT-5120 • Coronary Angiogram</div>
+</td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-surface-container text-on-surface font-label-sm text-label-sm">XA-CAR-4CH</span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface-variant">
+                  Today 07:58:33
+                </td>
+<td class="py-space-sm px-space-sm">
+<span class="px-space-xs py-space-2xs rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold inline-flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                    Verified Hash Match
+                  </span>
+</td>
+<td class="py-space-sm px-space-sm font-code-sm text-code-sm text-on-surface">
+<span class="font-semibold text-secondary">0.01%</span> anomaly risk
+                </td>
+<td class="py-space-sm px-space-sm text-right">
+<button class="px-space-sm py-space-2xs rounded-lg text-primary hover:bg-surface-container font-label-sm text-label-sm font-semibold transition-colors" type="button">
+                    Review
+                  </button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<!-- Right Column: Cryptographic Ledger Feed & Diagnostics Tools (4 cols) -->
+<aside class="xl:col-span-4 flex flex-col space-y-space-md">
+<!-- Diagnostic Quick Action Tools -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-md">
+<div class="flex items-center justify-between">
+<span class="font-headline-sm text-headline-sm text-on-surface">Diagnostic Suites</span>
+<span class="material-symbols-outlined text-outline text-[18px]">bolt</span>
+</div>
+<div class="grid grid-cols-1 gap-space-xs">
+<!-- Tool 1 -->
+<a class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors flex items-center justify-between group" href="#">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-primary-container text-on-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">biotech</span>
+</div>
+<div>
+<span class="font-label-md text-label-md text-on-surface group-hover:text-primary transition-colors block">AI Tamper Forensics</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Run SRM residual &amp; pixel gradient models</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-primary transition-colors text-[18px]">arrow_forward</span>
+</a>
+<!-- Tool 2 -->
+<a class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors flex items-center justify-between group" href="#">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">crisis_alert</span>
+</div>
+<div>
+<span class="font-label-md text-label-md text-on-surface group-hover:text-secondary transition-colors block">Risk Analysis Engine</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Batch integrity &amp; DICOM header audits</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-secondary transition-colors text-[18px]">arrow_forward</span>
+</a>
+<!-- Tool 3 -->
+<a class="p-space-sm rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors flex items-center justify-between group" href="#">
+<div class="flex items-center gap-space-sm">
+<div class="w-9 h-9 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]">healing</span>
+</div>
+<div>
+<span class="font-label-md text-label-md text-on-surface group-hover:text-tertiary transition-colors block">Self-Recovery Studio</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Watermark extraction &amp; lossless healing</span>
+</div>
+</div>
+<span class="material-symbols-outlined text-outline group-hover:text-tertiary transition-colors text-[18px]">arrow_forward</span>
+</a>
+</div>
+</div>
+<!-- Real-time Cryptographic Audit Feed -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-md">
+<div class="flex items-center justify-between">
+<div>
+<div class="flex items-center gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Cryptographic Audit Feed</h3>
+<span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
+</div>
+<span class="font-label-sm text-label-sm text-on-surface-variant">Continuous Ledger Ledger #902-D</span>
+</div>
+<button class="text-primary hover:text-primary-container font-label-sm text-label-sm font-semibold transition-colors" title="Sync Block Height" type="button">
+            Refresh
+          </button>
+</div>
+<!-- Ledger Micro-transactions Stream -->
+<div class="space-y-space-xs">
+<!-- Event 1 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col space-y-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm text-primary font-semibold">BLOCK #1,829,044</span>
+<span class="font-code-sm text-[11px] text-on-surface-variant">08:54:11 UTC</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface font-medium truncate">
+              Image Ingest Verified: PT-9042 // Axial-T2
+            </div>
+<div class="font-code-sm text-[11px] text-outline truncate">
+              Hash: 0x8f2a...c014798e3b5e43a9d997f
+            </div>
+<div class="flex items-center justify-between pt-space-2xs">
+<span class="px-space-xs py-space-2xs rounded bg-error-container text-on-error-container font-label-sm text-label-sm font-semibold">
+                SRM Mismatch Flagged
+              </span>
+<span class="font-code-sm text-[11px] text-secondary">3 validators</span>
+</div>
+</div>
+<!-- Event 2 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col space-y-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm text-primary font-semibold">BLOCK #1,829,043</span>
+<span class="font-code-sm text-[11px] text-on-surface-variant">08:49:02 UTC</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface font-medium truncate">
+              Dual-Tree Parity Restored: PT-8821
+            </div>
+<div class="font-code-sm text-[11px] text-outline truncate">
+              Hash: 0x43eb...66c28f9901ad4487b1220
+            </div>
+<div class="flex items-center justify-between pt-space-2xs">
+<span class="px-space-xs py-space-2xs rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-semibold">
+                Parity Proof Confirmed
+              </span>
+<span class="font-code-sm text-[11px] text-secondary">5 validators</span>
+</div>
+</div>
+<!-- Event 3 -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex flex-col space-y-space-2xs">
+<div class="flex items-center justify-between">
+<span class="font-code-sm text-code-sm text-primary font-semibold">BLOCK #1,829,042</span>
+<span class="font-code-sm text-[11px] text-on-surface-variant">08:42:20 UTC</span>
+</div>
+<div class="font-body-sm text-body-sm text-on-surface font-medium truncate">
+              Canonical Seal Committed: PT-7734
+            </div>
+<div class="font-code-sm text-[11px] text-outline truncate">
+              Hash: 0x9910...aa74d538eec193240fb47
+            </div>
+<div class="flex items-center justify-between pt-space-2xs">
+<span class="px-space-xs py-space-2xs rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold">
+                SHA-3 Dual Matched
+              </span>
+<span class="font-code-sm text-[11px] text-secondary">5 validators</span>
+</div>
+</div>
+</div>
+<!-- Ledger Integrity Footnote -->
+<div class="pt-space-xs flex items-center justify-between text-outline">
+<span class="font-label-sm text-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">shield</span>
+            Zero-Knowledge Proof Layer 2
+          </span>
+<a class="font-code-sm text-code-sm text-primary hover:underline" href="#">Inspect Audit Log</a>
+</div>
+</div>
+<!-- Ingest Performance Visual Widget -->
+<div class="bg-surface-container-lowest rounded-xl p-space-lg shadow-sm space-y-space-sm">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Cluster Telemetry</span>
+<span class="font-code-sm text-code-sm text-secondary font-semibold">0.42 ms latency</span>
+</div>
+<div class="space-y-space-xs">
+<div class="flex justify-between font-body-sm text-body-sm text-on-surface">
+<span>Cryptographic Verification Pipeline</span>
+<span class="font-code-sm font-medium">99.98% Healthy</span>
+</div>
+<!-- Inline Minimal Sparkline SVG (Theme Compatible) -->
+<div class="h-10 w-full text-secondary">
+<svg class="w-full h-full" fill="none" preserveaspectratio="none" viewbox="0 0 200 40">
+<path d="M0 32 L30 28 L60 30 L90 14 L120 18 L150 8 L180 12 L200 6" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M0 32 L30 28 L60 30 L90 14 L120 18 L150 8 L180 12 L200 6 L200 40 L0 40 Z" fill="currentColor" fill-opacity="0.08"></path>
+</svg>
+</div>
+</div>
+<div class="flex justify-between items-center text-outline font-code-sm text-[11px] pt-1">
+<span>06:00 AM</span>
+<span>DICOM Stream Load: Nominal</span>
+<span>Now</span>
+</div>
+</div>
+</aside>
+</div>
+</div>
+<script>
+  // Simple micro-interaction for filter tab active states
+  document.addEventListener('DOMContentLoaded', () => {
+    const filterButtons = document.querySelectorAll('section button');
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Toggle aesthetic styling seamlessly if clicked
+        if (btn.classList.contains('bg-surface-container-lowest')) return;
+        filterButtons.forEach(b => {
+          b.classList.remove('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+          if(!b.classList.contains('text-error')) {
+            b.classList.add('text-on-surface-variant');
+          }
+        });
+        btn.classList.add('bg-surface-container-lowest', 'shadow-sm');
+        if(!btn.classList.contains('text-error')) {
+          btn.classList.add('text-primary');
+          btn.classList.remove('text-on-surface-variant');
+        }
+      });
+    });
+  });
+</script></main></div></body></html>

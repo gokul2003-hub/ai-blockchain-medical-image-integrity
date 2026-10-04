@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&amp;family=Manrope:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"surface":"#fbf9f6","on-secondary-container":"#406d58","primary-container":"#2e6f7e","on-secondary-fixed":"#002114","secondary-container":"#bceed3","inverse-on-surface":"#f2f0ed","on-tertiary-fixed-variant":"#4a3d7b","tertiary":"#524584","on-tertiary-fixed":"#1e0e4d","secondary-fixed":"#bceed3","inverse-surface":"#30312f","secondary":"#3a6752","surface-bright":"#fbf9f6","on-error":"#ffffff","on-secondary-fixed-variant":"#224f3c","background":"#fbf9f6","on-tertiary-container":"#eae1ff","on-primary-fixed":"#001f26","surface-variant":"#e4e2df","tertiary-fixed":"#e7deff","surface-container-highest":"#e4e2df","primary-fixed-dim":"#92d0e1","on-background":"#1b1c1a","surface-dim":"#dbdad7","on-secondary":"#ffffff","error":"#ba1a1a","on-tertiary":"#ffffff","surface-container-low":"#f5f3f0","surface-tint":"#236675","on-surface-variant":"#40484b","error-container":"#ffdad6","outline":"#70797b","on-primary-container":"#b6efff","secondary-fixed-dim":"#a1d1b8","outline-variant":"#bfc8cb","primary-fixed":"#aeecfe","surface-container":"#efeeeb","primary":"#095765","surface-container-high":"#eae8e5","surface-container-lowest":"#ffffff","on-surface":"#1b1c1a","on-error-container":"#93000a","on-primary-fixed-variant":"#004e5c","inverse-primary":"#92d0e1","tertiary-container":"#6b5d9e","tertiary-fixed-dim":"#ccbeff","on-primary":"#ffffff"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"space-2xl":"3rem","space-xl":"2rem","margin-mobile":"1rem","space-lg":"1.5rem","space-sm":"0.5rem","space-3xl":"4.5rem","gutter-mobile":"0.75rem","gutter":"1.5rem","space-md":"1rem","margin-desktop":"3rem","gutter-desktop":"2rem","space-xs":"0.25rem","space-2xs":"0.125rem","margin":"1.5rem"},"fontFamily":{"body-md":["Public Sans"],"body-sm":["Public Sans"],"headline-xl":["Manrope"],"display-lg-mobile":["Manrope"],"body-lg":["Public Sans"],"label-md":["Public Sans"],"label-lg":["Public Sans"],"display-lg":["Manrope"],"headline-xl-mobile":["Manrope"],"code-sm":["Public Sans"],"headline-sm":["Manrope"],"headline-lg":["Manrope"],"label-sm":["Public Sans"],"headline-md":["Manrope"]},"fontSize":{"body-md":["0.875rem",{"lineHeight":"1.375rem","fontWeight":"400"}],"body-sm":["0.75rem",{"lineHeight":"1.125rem","fontWeight":"400"}],"headline-xl":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"display-lg-mobile":["2rem",{"lineHeight":"2.5rem","letterSpacing":"-0.02em","fontWeight":"600"}],"body-lg":["1rem",{"lineHeight":"1.625rem","fontWeight":"400"}],"label-md":["0.75rem",{"lineHeight":"1rem","letterSpacing":"0.02em","fontWeight":"600"}],"label-lg":["0.875rem",{"lineHeight":"1.25rem","letterSpacing":"0.01em","fontWeight":"600"}],"display-lg":["2.75rem",{"lineHeight":"3.25rem","letterSpacing":"-0.025em","fontWeight":"600"}],"headline-xl-mobile":["1.625rem",{"lineHeight":"2.125rem","letterSpacing":"-0.015em","fontWeight":"600"}],"code-sm":["0.75rem",{"lineHeight":"1rem","fontWeight":"500"}],"headline-sm":["1.125rem",{"lineHeight":"1.5rem","letterSpacing":"-0.005em","fontWeight":"500"}],"headline-lg":["1.5rem",{"lineHeight":"2rem","letterSpacing":"-0.015em","fontWeight":"600"}],"label-sm":["0.6875rem",{"lineHeight":"0.875rem","letterSpacing":"0.04em","fontWeight":"600"}],"headline-md":["1.25rem",{"lineHeight":"1.75rem","letterSpacing":"-0.01em","fontWeight":"600"}]}}}}</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased min-h-screen"><aside class="fixed left-0 top-0 h-full w-72 bg-surface-container-lowest z-40 flex flex-col shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 px-space-lg flex items-center gap-space-sm bg-surface-container-lowest"><img alt="MediSecure AI Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1WlfSVbhhj2LpYnUrM-_7Oh15mKwLsXSJPkl38PtN4zD1fNrQ_8Ylh1pq4-kbXw1-nStWPhUYyGEI917rBORWpYgzW-v5Uc2k38SSiSLtYzBwJd-0NSdAogTcL6HyG363Il4TU_d1cshVxaaogFQIf07T-E_aC9ekv0mY0gTdL2WmKLxyxHYwPCVV8jhgG9Sz1Xj6-BXGmLkmTIjFJbRUZ0ZGSooozoixlZVLHuwx_-F8WHRj8VJmWux0aq"/><div class="flex flex-col"><span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">MediSecure AI</span><span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Clinical Integrity Platform</span></div></div><div class="px-space-md py-space-sm"><div class="px-space-sm py-space-xs font-label-sm text-label-sm uppercase tracking-wider text-outline">Clinical Workspace</div></div><nav class="flex-1 px-space-md space-y-space-2xs overflow-y-auto" data-active-classes="bg-surface-container text-primary font-semibold"><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="doctor-dashboard" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span>Doctor Dashboard</span></a><a class="flex items-center justify-between px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="assigned-images" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">folder_shared</span><span>Assigned Images</span></div><span class="px-space-xs py-space-2xs rounded bg-surface-container text-on-surface-variant font-code-sm text-code-sm">14</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="image-review-and-verification" href="#"><span class="material-symbols-outlined text-[20px]">fact_check</span><span>Image Review &amp; Verification</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="ai-tamper-forensics" href="#"><span class="material-symbols-outlined text-[20px]">biotech</span><span>AI Tamper Forensics</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="risk-analysis" href="#"><span class="material-symbols-outlined text-[20px]">crisis_alert</span><span>Risk Analysis</span></a><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="self-recovery-studio" href="#"><span class="material-symbols-outlined text-[20px]">healing</span><span>Self-Recovery Studio</span></a><div class="pt-space-md pb-space-xs px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-outline">Governance &amp; Trust</div><a class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high hover:text-on-surface transition-colors" data-path="blockchain-audit-and-reports" href="#"><span class="material-symbols-outlined text-[20px]">verified</span><span>Blockchain Audit &amp; Reports</span></a><a aria-current="page" class="flex items-center gap-space-sm px-space-md py-space-sm rounded-lg transition-colors bg-surface-container text-primary font-semibold" data-path="patient-consent-directory" href="#"><span class="material-symbols-outlined text-[20px]">shield_person</span><span>Patient Consent Directory</span></a></nav><div class="p-space-md bg-surface-container-lowest"><div class="p-space-md rounded-xl bg-surface-container-low flex flex-col gap-space-xs"><div class="flex items-center justify-between"><span class="font-label-sm text-label-sm text-on-surface-variant uppercase">DICOM Node</span><span class="w-2 h-2 rounded-full bg-secondary"></span></div><span class="font-body-sm text-body-sm font-code-sm text-on-surface">AE_TITLE: RAD_STATION_9</span><span class="font-label-sm text-label-sm text-on-surface-variant">TLS 1.3 Strict Mutual Auth</span></div></div></aside><div class="pl-72 flex flex-col min-h-screen"><header class="fixed top-0 left-72 right-0 h-16 z-30 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 w-full px-space-xl flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-lg"><div class="relative flex items-center"><div class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container text-on-surface"><span class="material-symbols-outlined text-[18px] text-primary">stethoscope</span><span class="font-label-md text-label-md">Doctor / Radiologist</span><span class="material-symbols-outlined text-[16px] text-on-surface-variant">expand_more</span></div></div><div class="flex items-center gap-space-xs px-space-md py-space-2xs rounded-full bg-secondary-fixed text-on-secondary-fixed"><span class="w-2 h-2 rounded-full bg-secondary animate-pulse"></span><span class="font-label-sm text-label-sm tracking-wide">Ledger Synced • Node #428</span></div></div><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-xs"><button aria-label="Notifications" class="p-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors relative" type="button"><span class="material-symbols-outlined text-[22px]">notifications</span><span class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-error"></span></button><button aria-label="Audit Ledger Search" class="p-space-xs rounded-lg text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[22px]">fingerprint</span></button></div><div class="h-8 w-px bg-surface-variant"></div><div class="flex items-center gap-space-sm"><div class="text-right hidden sm:flex flex-col"><span class="font-label-md text-label-md text-on-surface leading-tight">Dr. Eleanor Vance, MD</span><span class="font-label-sm text-label-sm text-on-surface-variant">Lead Thoracic Radiologist</span></div><img alt="Profile" class="w-8 h-8 rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiouShwD5op2XqHVJYRwDR91-PBjeNrwUZH8QqRGivU9ReqjDihUI7O3KXYv2agOD5daKqnOeOfMmejWtBHBp4oS61QT236WGouXJB2aqMX6OmeFqri7IAuhtQB7LqgnMQRyG9-5mBHFB7qdaum8R-d8KG-X9zZZgjF28RXZShE1tIdBiy-WypphDmVn77rIv6hUlR80tTsWqSk7zz3BJGSSomVY_Hag__n9IXhnivc4XIhY7tTvQV9Q"/></div></div></div></header><main class="flex-1 w-full pt-16 bg-surface px-space-xl py-space-xl"><div class="flex flex-col w-full">
+<div class="w-full max-w-7xl mx-auto space-y-space-xl pb-space-3xl">
+<!-- Header Section with Personal Welcome & Status -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-space-md pt-space-xs">
+<div class="space-y-space-xs">
+<div class="inline-flex items-center gap-space-xs px-space-sm py-space-2xs rounded-full bg-secondary-container/40 text-on-secondary-container">
+<span class="w-2 h-2 rounded-full bg-secondary"></span>
+<span class="font-label-sm text-label-sm uppercase tracking-wider">Patient Portal • Medical Vault</span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface">Welcome back, Sarah Miller</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+          Your health records and scans are safely secured with verified digital protection.
+        </p>
+</div>
+<!-- Quick Safety Indicator Widget -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex items-center gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-secondary-fixed flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">Digital Lock Active</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant">Last verified today • 09:15 AM</span>
+</div>
+</div>
+</div>
+<!-- Reassuring Banner -->
+<div class="w-full bg-secondary-fixed/50 rounded-xl p-space-lg flex flex-col sm:flex-row sm:items-center justify-between gap-space-md shadow-sm">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 rounded-full bg-secondary text-on-secondary flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[22px]">check</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-secondary-fixed">All Your Scans are Safe &amp; Protected</h2>
+<p class="font-body-md text-body-md text-on-secondary-fixed-variant">
+            3 verified diagnostic studies stored with tamper-proof security safeguards.
+          </p>
+</div>
+</div>
+<div class="flex items-center gap-space-sm self-start sm:self-auto shrink-0">
+<span class="font-label-sm text-label-sm text-on-secondary-fixed bg-surface-container-lowest/80 px-space-sm py-space-xs rounded-full">
+          Private • HIPAA Compliant
+        </span>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex items-center gap-space-xs bg-surface-container-low p-space-xs rounded-xl overflow-x-auto" id="portalTabs">
+<button class="tab-btn flex items-center gap-space-sm px-space-lg py-space-sm rounded-lg font-label-lg text-label-lg bg-surface-container-lowest text-primary shadow-sm transition-all" onclick="switchTab('imagesTab', this)" type="button">
+<span class="material-symbols-outlined text-[20px]">perm_media</span>
+<span>My Medical Images (3)</span>
+</button>
+<button class="tab-btn flex items-center gap-space-sm px-space-lg py-space-sm rounded-lg font-label-lg text-label-lg text-on-surface-variant hover:text-on-surface transition-all" onclick="switchTab('uploadTab', this)" type="button">
+<span class="material-symbols-outlined text-[20px]">cloud_upload</span>
+<span>Upload New Scan</span>
+</button>
+<button class="tab-btn flex items-center gap-space-sm px-space-lg py-space-sm rounded-lg font-label-lg text-label-lg text-on-surface-variant hover:text-on-surface transition-all" onclick="switchTab('consentTab', this)" type="button">
+<span class="material-symbols-outlined text-[20px]">lock_person</span>
+<span>Who Can Access My Images</span>
+<span class="px-space-xs py-space-2xs rounded-full bg-primary/10 text-primary font-label-sm text-label-sm">1 Pending</span>
+</button>
+</div>
+<!-- TAB 1: My Medical Images -->
+<section class="tab-content block space-y-space-lg" id="imagesTab">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Registered Scans</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">View your scans, diagnostic findings, and sharing records.</p>
+</div>
+<div class="flex items-center gap-space-xs text-on-surface-variant">
+<span class="font-label-sm text-label-sm">Sort by:</span>
+<span class="font-label-md text-label-md text-on-surface bg-surface-container-lowest px-space-sm py-space-xs rounded-lg shadow-sm">Most Recent</span>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-space-lg">
+<!-- Scan Card 1 -->
+<article class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col group transition-all hover:shadow-md">
+<div class="relative h-48 bg-inverse-surface overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" data-alt="Clear high resolution brain MRI cross section view displayed in medical viewer format with serene dark clinical framing and contrast enhancement" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBK3F5f9J3GAEn-Pp9pwomFiVSyzAhBt9yMyfdajC-SRHewVAW4JArLwQfJa3bWmdw7z5U6qjuo3i0By3YPAgSDVDgq7z0lujPMYjqLDSpih8jqkksk996exIBpgaFCHyHTnjwFzvlGsOTJ8KW9hQfWm8jUoSoYnrIaF0kWQ_eBNMyANDGEdgmks7vO49UcPMkXfjum3pLx6sPgF-nxZ9gThYJ4qAjHpSPhpQy1VulxfoUKbGeeALUQOw"/>
+<div class="absolute top-space-sm left-space-sm flex items-center gap-space-xs bg-surface-container-lowest/95 backdrop-blur-md px-space-sm py-space-2xs rounded-full text-secondary">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-label-sm text-label-sm text-on-secondary-container">Secure &amp; Verified</span>
+</div>
+<div class="absolute bottom-space-sm right-space-sm bg-inverse-surface/80 text-inverse-on-surface text-label-sm font-label-sm px-space-xs py-space-2xs rounded">
+              34 Slices • DICOM
+            </div>
+</div>
+<div class="p-space-lg flex-1 flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">Memorial Neurology Clinic</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface leading-snug">Brain MRI Scan (With Contrast)</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Taken on 12 September 2026 • Ref #MN-9821</p>
+</div>
+<div class="bg-surface-container-low rounded-lg p-space-sm flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center text-label-sm font-label-sm">
+                ES
+              </div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface truncate">Dr. Emily Sharma</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">Lead Radiologist • Full Access</span>
+</div>
+</div>
+<div class="pt-space-xs flex items-center gap-space-sm">
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-surface-container text-primary hover:bg-surface-container-high transition-colors font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+<span>View Scan</span>
+</button>
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-secondary text-on-secondary hover:opacity-95 transition-opacity font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">description</span>
+<span>Doctor Report</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Scan Card 2 -->
+<article class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col group transition-all hover:shadow-md">
+<div class="relative h-48 bg-inverse-surface overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" data-alt="Monochrome lumbar spine x-ray radiography view showing vertebrae aligned clearly with clinical precision on soft illuminated dark backdrop" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsz5aruI4yeCuLky0nkbK8qKxTfxZv_IlprCIocTLWHZ_3eEagCEtdMICuFdeZ2qhDElHS-eT-olggIApdH0YQsfeWlLgRfsRzQcKzG3Zf0aVLfVjU4VFS4ONX9iIvfosL_bB4tNHDEdIKvu4Eaw0nwyKbcLU7nKkpd6HwCcelxcCW6elxq1UUQiyi99319lgoVItwJYOQHp4pxaPrsRqbYbQRdtTh6pisTq5EE6nLyR9U9fa5hbVU6Q"/>
+<div class="absolute top-space-sm left-space-sm flex items-center gap-space-xs bg-surface-container-lowest/95 backdrop-blur-md px-space-sm py-space-2xs rounded-full text-secondary">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-label-sm text-label-sm text-on-secondary-container">Secure &amp; Verified</span>
+</div>
+<div class="absolute bottom-space-sm right-space-sm bg-inverse-surface/80 text-inverse-on-surface text-label-sm font-label-sm px-space-xs py-space-2xs rounded">
+              2 Views • High Definition
+            </div>
+</div>
+<div class="p-space-lg flex-1 flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">St. Jude Orthopedic Care</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface leading-snug">Lumbar Spine X-Ray</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Taken on 28 August 2026 • Ref #SJ-4410</p>
+</div>
+<div class="bg-surface-container-low rounded-lg p-space-sm flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center text-label-sm font-label-sm">
+                JR
+              </div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface truncate">Dr. James Rodriguez</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">Orthopedic Surgeon • Full Access</span>
+</div>
+</div>
+<div class="pt-space-xs flex items-center gap-space-sm">
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-surface-container text-primary hover:bg-surface-container-high transition-colors font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+<span>View Scan</span>
+</button>
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-secondary text-on-secondary hover:opacity-95 transition-opacity font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">description</span>
+<span>Doctor Report</span>
+</button>
+</div>
+</div>
+</article>
+<!-- Scan Card 3 -->
+<article class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden flex flex-col group transition-all hover:shadow-md">
+<div class="relative h-48 bg-inverse-surface overflow-hidden">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" data-alt="Clinical ultrasound image of abdominal soft tissue with gentle acoustic wave reflections in soft grayscale tones framed securely" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCxXpGTPNn-TyCKOzR1G95eIUuQ6HLXPltQuNbgN-ozxJmxvX_nUSUybyWkmkfzgaRwJiFohngknMGSu_NrwgrRlbhGuKysYo_dgxvndNCki7Hqp5UlxjEukPbbhzUSfk2Bm-JwurBrMrai7g303cYIncAF_V0MgKWeJ0j_P4yT-aElox098bo5izgY0R2bVYc5hDs6I_voOQUCIXfWaVFelsHoUnFWZQ0A0mOwajGWDAy9cy0jidpxzw"/>
+<div class="absolute top-space-sm left-space-sm flex items-center gap-space-xs bg-surface-container-lowest/95 backdrop-blur-md px-space-sm py-space-2xs rounded-full text-secondary">
+<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-label-sm text-label-sm text-on-secondary-container">Secure &amp; Verified</span>
+</div>
+<div class="absolute bottom-space-sm right-space-sm bg-inverse-surface/80 text-inverse-on-surface text-label-sm font-label-sm px-space-xs py-space-2xs rounded">
+              Standard Doppler
+            </div>
+</div>
+<div class="p-space-lg flex-1 flex flex-col justify-between space-y-space-md">
+<div class="space-y-space-xs">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-outline">City Diagnostic Imaging</span>
+<h3 class="font-headline-sm text-headline-sm text-on-surface leading-snug">Abdominal Ultrasound</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Taken on 14 June 2026 • Ref #CD-1108</p>
+</div>
+<div class="bg-surface-container-low rounded-lg p-space-sm flex items-center gap-space-sm">
+<div class="w-8 h-8 rounded-full bg-surface-container-highest text-on-surface-variant flex items-center justify-center text-label-sm font-label-sm">
+<span class="material-symbols-outlined text-[16px]">local_hospital</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-label-sm text-on-surface truncate">City Imaging Care Team</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant text-[11px] truncate">Routine Ultrasound Review</span>
+</div>
+</div>
+<div class="pt-space-xs flex items-center gap-space-sm">
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-surface-container text-primary hover:bg-surface-container-high transition-colors font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[18px]">visibility</span>
+<span>View Scan</span>
+</button>
+<button class="flex-1 py-space-sm px-space-md rounded-lg bg-secondary text-on-secondary hover:opacity-95 transition-opacity font-label-lg text-label-lg text-center flex items-center justify-center gap-space-xs shadow-sm" type="button">
+<span class="material-symbols-outlined text-[18px]">description</span>
+<span>Doctor Report</span>
+</button>
+</div>
+</div>
+</article>
+</div>
+</section>
+<!-- TAB 2: Upload New Medical Scan -->
+<section class="tab-content hidden space-y-space-xl" id="uploadTab">
+<div class="bg-surface-container-lowest p-space-xl rounded-xl shadow-sm space-y-space-xl">
+<div class="space-y-space-xs">
+<h2 class="font-headline-md text-headline-md text-on-surface">Upload Your Medical Scan</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+            Upload diagnostic files from your clinic, CD-ROM, or patient flash drive. We automatically protect your images against unauthorized edits.
+          </p>
+</div>
+<!-- Modality Pill Selector -->
+<div class="space-y-space-xs">
+<label class="font-label-md text-label-md text-on-surface">Step 1: Select Type of Scan</label>
+<div class="flex flex-wrap gap-space-xs pt-space-2xs" id="modalityPills">
+<button class="px-space-md py-space-xs rounded-full font-label-md text-label-md bg-primary text-on-primary shadow-sm transition-all" onclick="selectModality(this)" type="button">MRI Scan</button>
+<button class="px-space-md py-space-xs rounded-full font-label-md text-label-md bg-surface-container-low text-on-surface-variant hover:bg-surface-container transition-all" onclick="selectModality(this)" type="button">CT Scan</button>
+<button class="px-space-md py-space-xs rounded-full font-label-md text-label-md bg-surface-container-low text-on-surface-variant hover:bg-surface-container transition-all" onclick="selectModality(this)" type="button">X-Ray</button>
+<button class="px-space-md py-space-xs rounded-full font-label-md text-label-md bg-surface-container-low text-on-surface-variant hover:bg-surface-container transition-all" onclick="selectModality(this)" type="button">Ultrasound</button>
+<button class="px-space-md py-space-xs rounded-full font-label-md text-label-md bg-surface-container-low text-on-surface-variant hover:bg-surface-container transition-all" onclick="selectModality(this)" type="button">PET Scan</button>
+</div>
+</div>
+<!-- Clean Drag and Drop Area -->
+<div class="space-y-space-xs">
+<label class="font-label-md text-label-md text-on-surface">Step 2: Add Files</label>
+<div class="rounded-xl bg-surface-container-low p-space-2xl text-center flex flex-col items-center justify-center space-y-space-md cursor-pointer hover:bg-surface-container transition-colors" id="dropArea">
+<div class="w-16 h-16 rounded-full bg-surface-container-lowest shadow-sm flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[32px]">upload_file</span>
+</div>
+<div class="space-y-space-2xs max-w-md">
+<p class="font-headline-sm text-headline-sm text-on-surface">Drag &amp; Drop your scan files here</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+                Supports DICOM (.dcm), PNG, and JPEG files up to 500 MB per study.
+              </p>
+</div>
+<label class="cursor-pointer px-space-lg py-space-sm rounded-lg bg-surface-container-lowest text-primary font-label-lg text-label-lg shadow-sm hover:bg-surface transition-colors inline-flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+<span>Browse Files on Computer</span>
+<input accept=".dcm,.png,.jpg,.jpeg" class="hidden" multiple="" type="file"/>
+</label>
+</div>
+</div>
+<!-- Friendly Security Timeline Graphic -->
+<div class="bg-surface-container-low/60 p-space-lg rounded-xl space-y-space-md">
+<div class="flex items-center justify-between">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">How Your Scan Is Protected</h3>
+<span class="font-label-sm text-label-sm text-secondary flex items-center gap-space-2xs">
+<span class="material-symbols-outlined text-[16px]">verified</span>
+              Automated 4-Step Guarantee
+            </span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- Step 1 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex items-start gap-space-sm shadow-sm">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div class="space-y-space-2xs">
+<span class="font-label-md text-label-md text-on-surface block">1. Uploading</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block">Encrypted transit directly from your browser.</span>
+</div>
+</div>
+<!-- Step 2 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex items-start gap-space-sm shadow-sm">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div class="space-y-space-2xs">
+<span class="font-label-md text-label-md text-on-surface block">2. Securing Image</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block">Protective digital seal applied instantly.</span>
+</div>
+</div>
+<!-- Step 3 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex items-start gap-space-sm shadow-sm">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div class="space-y-space-2xs">
+<span class="font-label-md text-label-md text-on-surface block">3. Integrity Registration</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block">Guarantees no doctor or AI alters pixels.</span>
+</div>
+</div>
+<!-- Step 4 -->
+<div class="bg-surface-container-lowest p-space-md rounded-lg flex items-start gap-space-sm shadow-sm">
+<div class="w-8 h-8 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div class="space-y-space-2xs">
+<span class="font-label-md text-label-md text-on-surface block">4. Safe Cloud Storage</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant block">Ready for your doctors to inspect anytime.</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Row -->
+<div class="flex items-center justify-end gap-space-sm pt-space-xs">
+<button class="px-space-lg py-space-sm rounded-lg bg-surface-container text-on-surface-variant font-label-lg text-label-lg hover:bg-surface-container-high transition-colors" type="button">
+            Cancel
+          </button>
+<button class="px-space-xl py-space-sm rounded-lg bg-secondary text-on-secondary font-label-lg text-label-lg hover:opacity-95 shadow-sm transition-all flex items-center gap-space-xs" type="button">
+<span class="material-symbols-outlined text-[18px]">shield</span>
+<span>Upload Securely</span>
+</button>
+</div>
+</div>
+</section>
+<!-- TAB 3: Consent Manager -->
+<section class="tab-content hidden space-y-space-lg" id="consentTab">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Who Can Access My Images</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+            You maintain 100% control over which doctors and research centers view your medical files.
+          </p>
+</div>
+<button class="self-start sm:self-auto px-space-md py-space-xs rounded-lg bg-primary text-on-primary font-label-md text-label-md flex items-center gap-space-xs shadow-sm hover:opacity-95" type="button">
+<span class="material-symbols-outlined text-[18px]">person_add</span>
+<span>Grant Access to New Doctor</span>
+</button>
+</div>
+<!-- Consent Listing -->
+<div class="space-y-space-md">
+<!-- Doctor 1: Emily Sharma -->
+<div class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-primary-container text-on-primary-container flex items-center justify-center font-headline-sm text-headline-sm">
+              ES
+            </div>
+<div>
+<div class="flex items-center gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Dr. Emily Sharma</h3>
+<span class="px-space-xs py-space-2xs rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm">Active Access</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Lead Radiologist • Memorial Neurology</p>
+<div class="flex items-center gap-space-sm text-on-surface-variant pt-space-2xs">
+<span class="font-label-sm text-label-sm">Permitted: Brain MRI • Lumbar Spine</span>
+<span class="text-outline">•</span>
+<span class="font-label-sm text-label-sm">Access Expires: 20 Oct 2026</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-space-xs self-end md:self-center">
+<button class="px-space-md py-space-xs rounded-lg bg-surface-container-low text-on-surface hover:bg-surface-container transition-colors font-label-md text-label-md" onclick="alert('Access settings for Dr. Sharma opened.')" type="button">
+              Manage Access
+            </button>
+<button class="px-space-md py-space-xs rounded-lg bg-error-container/40 text-on-error-container hover:bg-error-container/70 transition-colors font-label-md text-label-md flex items-center gap-space-2xs" onclick="confirm('Are you sure you want to revoke access for Dr. Emily Sharma?')" type="button">
+<span class="material-symbols-outlined text-[16px]">do_not_disturb_on</span>
+<span>Revoke Access</span>
+</button>
+</div>
+</div>
+<!-- Doctor 2: Robert Davis -->
+<div class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-space-md">
+<div class="flex items-center gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-surface-container-high text-on-surface flex items-center justify-center font-headline-sm text-headline-sm">
+              RD
+            </div>
+<div>
+<div class="flex items-center gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Dr. Robert Davis</h3>
+<span class="px-space-xs py-space-2xs rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm">Active Access</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Neurologist • University Spine &amp; Brain Center</p>
+<div class="flex items-center gap-space-sm text-on-surface-variant pt-space-2xs">
+<span class="font-label-sm text-label-sm">Permitted: Brain MRI</span>
+<span class="text-outline">•</span>
+<span class="font-label-sm text-label-sm">Access Expires: 15 Nov 2026</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-space-xs self-end md:self-center">
+<button class="px-space-md py-space-xs rounded-lg bg-surface-container-low text-on-surface hover:bg-surface-container transition-colors font-label-md text-label-md" onclick="alert('Access settings for Dr. Davis opened.')" type="button">
+              Manage Access
+            </button>
+<button class="px-space-md py-space-xs rounded-lg bg-error-container/40 text-on-error-container hover:bg-error-container/70 transition-colors font-label-md text-label-md flex items-center gap-space-2xs" onclick="confirm('Are you sure you want to revoke access for Dr. Robert Davis?')" type="button">
+<span class="material-symbols-outlined text-[16px]">do_not_disturb_on</span>
+<span>Revoke Access</span>
+</button>
+</div>
+</div>
+<!-- Research Study Pending Item -->
+<div class="bg-surface-container-lowest p-space-lg rounded-xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-space-md border-l-4 border-primary">
+<div class="flex items-center gap-space-md">
+<div class="w-12 h-12 rounded-xl bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">science</span>
+</div>
+<div>
+<div class="flex items-center gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Authorized Research Study #RES-441</h3>
+<span class="px-space-xs py-space-2xs rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm">Pending Your Approval</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Anonymized Brain MRI Research Study • Stanford Medical Consortium</p>
+<p class="font-body-sm text-body-sm text-on-surface-variant pt-space-2xs">
+                Your personal identity, name, and address are removed completely before sharing.
+              </p>
+</div>
+</div>
+<div class="flex items-center gap-space-xs self-end md:self-center">
+<button class="px-space-md py-space-xs rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-colors font-label-md text-label-md" onclick="this.closest('.border-l-4').remove(); alert('Request declined. No files were shared.');" type="button">
+              Decline
+            </button>
+<button class="px-space-md py-space-xs rounded-lg bg-secondary text-on-secondary font-label-lg text-label-lg shadow-sm hover:opacity-95 transition-opacity flex items-center gap-space-xs" onclick="this.textContent = 'Approved'; this.classList.remove('bg-secondary'); this.classList.add('bg-surface-container-high', 'text-on-surface');" type="button">
+<span class="material-symbols-outlined text-[18px]">verified</span>
+<span>Approve Access</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Reassurance Banner -->
+<div class="bg-surface-container-low rounded-xl p-space-lg flex flex-col md:flex-row items-center justify-between gap-space-md text-on-surface-variant">
+<div class="flex items-center gap-space-sm">
+<span class="material-symbols-outlined text-[24px] text-primary">health_and_safety</span>
+<span class="font-body-sm text-body-sm">
+          MediSecure AI Patient Guardian: Your scans cannot be altered, copied, or deleted without your direct consent.
+        </span>
+</div>
+<div class="flex items-center gap-space-md">
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">Privacy Guarantee</a>
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">Download Medical Copy</a>
+<a class="font-label-sm text-label-sm text-primary hover:underline" href="#">Support Helpdesk</a>
+</div>
+</div>
+</div>
+</div>
+<script>
+  function switchTab(tabId, btn) {
+    // Hide all tab sections
+    document.querySelectorAll('.tab-content').forEach(section => {
+      section.classList.add('hidden');
+      section.classList.remove('block');
+    });
+
+    // Show targeted tab
+    const target = document.getElementById(tabId);
+    if (target) {
+      target.classList.remove('hidden');
+      target.classList.add('block');
+    }
+
+    // Reset button styling
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.remove('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+      b.classList.add('text-on-surface-variant');
+    });
+
+    // Activate current button
+    btn.classList.add('bg-surface-container-lowest', 'text-primary', 'shadow-sm');
+    btn.classList.remove('text-on-surface-variant');
+  }
+
+  function selectModality(pill) {
+    const parent = document.getElementById('modalityPills');
+    parent.querySelectorAll('button').forEach(btn => {
+      btn.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+      btn.classList.add('bg-surface-container-low', 'text-on-surface-variant');
+    });
+    pill.classList.remove('bg-surface-container-low', 'text-on-surface-variant');
+    pill.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+  }
+</script></main></div></body></html>

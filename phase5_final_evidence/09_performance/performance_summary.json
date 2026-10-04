@@ -1,0 +1,23 @@
+{
+  "preprocessing_mean_ms": 0.11,
+  "chen_aes_mean_ms": 51.98,
+  "sha3_mean_ms": 0.02,
+  "ai_inference_mean_ms": 128.85,
+  "pdf_generation_mean_ms": 15.09,
+  "blockchain_verify_chain_ms": 13.8,
+  "evidence_api_ms": 633.09,
+  "crypto_benchmarks": {
+    "npcr_percentage": 99.2611,
+    "uaci_percentage": 33.0387,
+    "plaintext_correlation": {
+      "horizontal": 0.217399,
+      "vertical": 0.144753,
+      "diagonal": 0.030654
+    },
+    "ciphertext_correlation": {
+      "horizontal": -0.014419,
+      "vertical": -0.001602,
+      "diagonal": -0.044215
+    }
+  }
+}

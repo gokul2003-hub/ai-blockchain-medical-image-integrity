@@ -1,0 +1,23 @@
+{
+  "image_id": 22,
+  "trusted_sha3": "a4e33e3fce5a979e98627be2b9784ae162008830855ae3bb22f5b9b95dd2afd1",
+  "upload_blockchain_tx": "bac7f364299ea9c7eabca3ea19acd51fcb286a894acc530434c1ea774b6605e8",
+  "storage_reference": "32ec0f8fc2c447c1ac5673caf51a2668.enc",
+  "normal_verification_passed": true,
+  "tampered_sha3": "f0c822749e248e587aae872ef8dcfc13cd197ece05697b4f7b37e22ee498cb28",
+  "tamper_detected_by_sha3": true,
+  "ai_tamper_detected": true,
+  "ai_tamper_percentage": 95.9,
+  "ai_confidence_score": 0.9757,
+  "ai_confidence_label": "HIGH_CONFIDENCE_TAMPER",
+  "ai_regions_count": 1,
+  "tamper_risk_score": 99.47,
+  "tamper_risk_category": "HIGH",
+  "cybersecurity_trust_score": 0.0,
+  "cybersecurity_trust_level": "CRITICAL",
+  "post_recovery_sha3": "a4e33e3fce5a979e98627be2b9784ae162008830855ae3bb22f5b9b95dd2afd1",
+  "post_recovery_exact_match": true,
+  "recovery_blockchain_tx": "e683e5118744398d05828626c5098271553571297d7e9caf11735efb165d66aa",
+  "forensic_pdf_path": "C:\\Users\\gokul\\OneDrive\\Desktop\\Blockchain Framework\\phase5_final_evidence\\12_forensic_reports\\Phase5_Forensic_Report_22.pdf",
+  "forensic_pdf_size_bytes": 3097
+}

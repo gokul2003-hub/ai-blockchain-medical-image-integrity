@@ -1,0 +1,103 @@
+{
+  "user": "drsmith",
+  "role": "doctor",
+  "me_status": 200,
+  "images_list_status": 200,
+  "target_image_id": 20,
+  "twin_status_code": 200,
+  "twin_data": {
+    "id": 11,
+    "image_id": 20,
+    "trusted_hash": "a4e33e3fce5a979e98627be2b9784ae162008830855ae3bb22f5b9b95dd2afd1",
+    "ipfs_cid": "dabc86b8734b4bec875d51ea0ecb81dc.enc",
+    "owner_id": 5,
+    "verification_status": "RECOVERED",
+    "metadata": {
+      "modality": "MRI",
+      "dimensions": [
+        256,
+        256
+      ],
+      "patient": "Alice"
+    },
+    "provenance": {
+      "source": "Phase5_Validation_Suite",
+      "device": "Synthetic_MR_3T"
+    },
+    "region_integrity_map": [
+      {
+        "region_id": "GLOBAL",
+        "status": "INTACT",
+        "tamper_probability": 0.0
+      }
+    ],
+    "verification_history": [
+      {
+        "timestamp": "2026-10-04T06:24:38.048712+00:00",
+        "event": "TWIN_CREATED",
+        "status": "VERIFIED",
+        "details": "Digital Twin instantiated with SHA-3 hash: a4e33e3fce..."
+      },
+      {
+        "timestamp": "2026-10-04T06:24:40.217965+00:00",
+        "event": "SECURITY_ALERT_TAMPERING",
+        "status": "QUARANTINED",
+        "details": "Risk Score: 99.47"
+      },
+      {
+        "timestamp": "2026-10-04T06:24:40.236079+00:00",
+        "event": "RECOVERY_COMPLETED",
+        "status": "RECOVERED",
+        "details": "Self-recovery passed post-recovery SHA-3 check"
+      }
+    ],
+    "created_at": "2026-10-04T06:24:38.049380",
+    "updated_at": "2026-10-04T06:24:40.236079"
+  },
+  "integrity_evidence_status": 200,
+  "integrity_evidence_keys": [
+    "image_id",
+    "image_name",
+    "image_type",
+    "created_at",
+    "original_dimensions",
+    "file_size_bytes",
+    "hash_algorithm",
+    "trusted_hash",
+    "current_hash",
+    "hash_match",
+    "verification_status",
+    "verification_timestamp",
+    "digital_integrity_twin",
+    "dit_status",
+    "storage",
+    "storage_provider",
+    "storage_reference",
+    "is_local_storage",
+    "blockchain",
+    "blockchain_tx_hash",
+    "blockchain_network",
+    "blockchain_block",
+    "blockchain_timestamp",
+    "ai_forensics",
+    "affected_regions",
+    "tamper_percentage",
+    "ai_model",
+    "ai_confidence",
+    "risk_score",
+    "trust_score",
+    "risk_and_trust",
+    "recovery_status",
+    "recovery_record_id",
+    "recovery",
+    "post_recovery_hash",
+    "post_recovery_verified",
+    "forensic_report_id",
+    "forensic_report_status",
+    "forensic_report",
+    "audit_events"
+  ],
+  "crypto_benchmark_status": 500,
+  "crypto_benchmark_data": null,
+  "recovery_records_status": 200
+}

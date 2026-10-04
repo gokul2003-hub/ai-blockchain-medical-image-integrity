@@ -1,0 +1,45 @@
+{
+  "user": "researcher_eval",
+  "role": "researcher",
+  "me_status": 200,
+  "dashboard_analytics_status": 200,
+  "fhe_benchmark_status": 200,
+  "federated_simulation_status": 200,
+  "federated_simulation_data": {
+    "federated_learning": {
+      "nodes_participated": 3,
+      "global_parameters_count": 100,
+      "local_updates_divergence": [
+        0.013801297454919502,
+        0.012188859635164456,
+        0.015691687402115254
+      ],
+      "status": "COMPLETED",
+      "aggregation_protocol": "FedAvg"
+    },
+    "homomorphic_encryption": {
+      "scheme": "CKKS",
+      "test_vector": [
+        0.5,
+        1.2,
+        -0.8,
+        2.4
+      ],
+      "homomorphic_addition_result": [
+        1.0,
+        2.399986,
+        -1.600012,
+        4.79999
+      ],
+      "homomorphic_multiplication_result": [
+        1.5,
+        3.599979,
+        -2.400018,
+        7.199985
+      ],
+      "status": "COMPLETED"
+    }
+  },
+  "unauthorized_patient_access_status": 403,
+  "unauthorized_patient_access_blocked": true
+}

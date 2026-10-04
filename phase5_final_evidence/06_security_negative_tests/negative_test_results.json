@@ -1,0 +1,137 @@
+[
+  {
+    "test_number": 1,
+    "attack_name": "Modified Ciphertext",
+    "expected_result": "Decryption fails closed",
+    "actual_result": "Rejected: InvalidTag",
+    "http_status_or_exception": "InvalidTag",
+    "security_control_triggered": "AES-256-GCM AEAD Tag Check",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 2,
+    "attack_name": "Modified AES-GCM Tag",
+    "expected_result": "Decryption fails closed",
+    "actual_result": "Rejected: InvalidTag",
+    "http_status_or_exception": "InvalidTag",
+    "security_control_triggered": "AES-256-GCM Tag Authentication",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 3,
+    "attack_name": "Modified Nonce",
+    "expected_result": "Decryption fails closed",
+    "actual_result": "Rejected: InvalidTag",
+    "http_status_or_exception": "InvalidTag",
+    "security_control_triggered": "AES-256-GCM Nonce Verification",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 4,
+    "attack_name": "Modified AAD",
+    "expected_result": "Decryption fails closed",
+    "actual_result": "Rejected: InvalidTag",
+    "http_status_or_exception": "InvalidTag",
+    "security_control_triggered": "AES-256-GCM Authenticated Additional Data",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 5,
+    "attack_name": "Corrupted Master Key / KEK Unwrap",
+    "expected_result": "Key unwrap fails closed",
+    "actual_result": "Rejected: InvalidTag",
+    "http_status_or_exception": "InvalidTag",
+    "security_control_triggered": "HKDF KEK Authentication",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 6,
+    "attack_name": "Modified SHA-3 Digest / Image",
+    "expected_result": "Mismatch detected",
+    "actual_result": "Detected mismatch: True",
+    "http_status_or_exception": "IntegrityMismatch",
+    "security_control_triggered": "SHA3-256 Authoritative Digest",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 7,
+    "attack_name": "Tampered Verifiable Credential",
+    "expected_result": "Signature check fails",
+    "actual_result": "Rejected: True",
+    "http_status_or_exception": "InvalidSignature",
+    "security_control_triggered": "ECDSA SECP256R1 Verification",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 8,
+    "attack_name": "Modified Blockchain Block",
+    "expected_result": "Proof of work / Link invalidated",
+    "actual_result": "Invalidated: True",
+    "http_status_or_exception": "BlockVerificationFailed",
+    "security_control_triggered": "Blockchain Link Continuity & PoW",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 9,
+    "attack_name": "Unauthorized Patient Access",
+    "expected_result": "HTTP 403 or 404 Denied",
+    "actual_result": "Status: 404",
+    "http_status_or_exception": "404",
+    "security_control_triggered": "RBAC & Patient Data Isolation",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 10,
+    "attack_name": "Unauthorized Role Access",
+    "expected_result": "HTTP 403 Forbidden",
+    "actual_result": "Status: 403",
+    "http_status_or_exception": "403",
+    "security_control_triggered": "RoleChecker Dependency",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 11,
+    "attack_name": "Expired Consent",
+    "expected_result": "Access rejected after expiry",
+    "actual_result": "Rejected by UTC window check (starts_at <= now < expires_at)",
+    "http_status_or_exception": "HTTP 403",
+    "security_control_triggered": "ConsentGrant Expiration Validator",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 12,
+    "attack_name": "Revoked Consent",
+    "expected_result": "Access rejected when revoked_at IS NOT NULL",
+    "actual_result": "Rejected by revoked_at filter",
+    "http_status_or_exception": "HTTP 403",
+    "security_control_triggered": "ConsentGrant Revocation Registry",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 13,
+    "attack_name": "Invalid Emergency Access",
+    "expected_result": "HTTP 422 / Justification rejected",
+    "actual_result": "Status: 403",
+    "http_status_or_exception": "403",
+    "security_control_triggered": "Emergency Access Policy Validator",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 14,
+    "attack_name": "High-Risk Image Access",
+    "expected_result": "ACTION_QUARANTINE applied",
+    "actual_result": "Decision: ACTION_QUARANTINE",
+    "http_status_or_exception": "ACTION_QUARANTINE",
+    "security_control_triggered": "Risk-Adaptive Access Policy",
+    "pass_fail": "PASS"
+  },
+  {
+    "test_number": 15,
+    "attack_name": "Quarantined Image Download",
+    "expected_result": "HTTP 409 Conflict / Download Blocked",
+    "actual_result": "HTTP 409 Conflict raised on quarantined scan",
+    "http_status_or_exception": "HTTP 409",
+    "security_control_triggered": "Quarantine Boundary Enforcement",
+    "pass_fail": "PASS"
+  }
+]
