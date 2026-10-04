@@ -461,18 +461,32 @@ async def preview_medical_image(
         raise HTTPException(status_code=404, detail="Patient profile not found")
 
     if current_user.role != "super_admin" and patient.user_id != current_user.id:
-        try:
-            authorize_image_action(db, current_user, image, "view", purpose="CLINICAL_PREVIEW", request=request)
-        except HTTPException:
-            if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View consent required")
+        # Same-hospital clinical staff may preview (consistent with the
+        # integrity-evidence and image-list authorization rule)
+        same_hospital_staff = (
+            current_user.role in {"doctor", "radiologist", "hospital_admin"}
+            and bool(current_user.hospital_id)
+            and bool(image.hospital_id)
+            and current_user.hospital_id == image.hospital_id
+        )
+        if not same_hospital_staff:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="CLINICAL_PREVIEW", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View consent required")
 
     try:
         encrypted_bytes = load_encrypted_object(image.file_path)
         decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
     except Exception as e:
         logger.warning(f"Decryption failed during preview for image ID {image.id}: {e}")
-        return Response(content=b"", status_code=500)
+        # Missing/undecryptable stored object is a missing resource, not a
+        # silent success — return an honest error the UI can render.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Stored encrypted object is unavailable for this image",
+        ) from e
 
     # 7. Continuous Integrity Verification on every access
     current_hash = sha3_hash(decrypted_bytes)
@@ -1375,11 +1389,20 @@ async def get_digital_twin_endpoint(
 
     patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
     if current_user.role != "super_admin" and (not patient or patient.user_id != current_user.id):
-        try:
-            authorize_image_action(db, current_user, image, "view", purpose="TWIN_VIEW", request=request)
-        except HTTPException:
-            if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for Digital Twin")
+        # Same-hospital clinical staff may read the twin (consistent with the
+        # integrity-evidence and image-list authorization rule)
+        same_hospital_staff = (
+            current_user.role in {"doctor", "radiologist", "hospital_admin"}
+            and bool(current_user.hospital_id)
+            and bool(image.hospital_id)
+            and current_user.hospital_id == image.hospital_id
+        )
+        if not same_hospital_staff:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="TWIN_VIEW", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for Digital Twin")
 
     twin = get_digital_twin(db, image_id)
     if not twin:

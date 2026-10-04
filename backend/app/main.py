@@ -23,7 +23,7 @@ from app.auth import get_password_hash
 from app.ai_model import get_ai_model
 
 # Routers
-from app.routes import auth, hospitals, users, images, permissions, blockchain, analytics, forensic_demo
+from app.routes import auth, hospitals, users, images, permissions, blockchain, analytics, forensic_demo, audit
 
 # --- 1. Configure Loguru Structured Logging ---
 logger.remove() # Remove default handler
@@ -113,7 +113,7 @@ async def generic_exception_handler(request: Request, exc: Exception):
     )
 
 # --- 6. Include API Module Routes (Versioned under /api/v1 and legacy /api) ---
-api_routers = [auth.router, hospitals.router, users.router, images.router, permissions.router, blockchain.router, analytics.router, forensic_demo.router]
+api_routers = [auth.router, hospitals.router, users.router, images.router, permissions.router, blockchain.router, analytics.router, forensic_demo.router, audit.router]
 for r in api_routers:
     app.include_router(r, prefix="/api/v1")
     app.include_router(r, prefix="/api", include_in_schema=False)
@@ -184,6 +184,11 @@ def read_root():
         "success": True,
         "message": "AI-Driven Blockchain Medical Sharing API (v1.1.0) is running."
     }
+
+@app.get("/health")
+def health_check():
+    """Liveness probe for orchestrators/load balancers (no auth required)."""
+    return {"status": "ok", "service": "medisecure-ai-backend"}
 
 def seed_database(db: Session):
     if settings.environment != "production" and db.query(Hospital).count() == 0:

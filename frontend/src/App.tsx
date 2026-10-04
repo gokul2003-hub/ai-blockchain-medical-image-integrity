@@ -2,9 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { ShieldCheck, Users, Upload, RefreshCw, FileCode2, Settings, Building2, Server } from "lucide-react";
 
-import { apiClient } from "./services/api";
+import { apiClient, apiService } from "./services/api";
 import { ToastProvider } from "./components/Toast";
-import Login from "./views/Login";
 import Navbar from "./components/Navbar";
 import Sidebar from "./components/Sidebar";
 
@@ -168,9 +167,15 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    // Revoke the server-side session first (best-effort; auth header still set)
+    apiService.logout().catch(() => {
+      /* server unreachable — local cleanup below is still required */
+    });
     localStorage.removeItem("med_token");
     localStorage.removeItem("med_username");
     localStorage.removeItem("med_role");
+    localStorage.removeItem("med_remember");
+    localStorage.removeItem("token"); // legacy key still read by getAuthToken()
     setToken(null);
     setUsername(null);
     setRole(null);

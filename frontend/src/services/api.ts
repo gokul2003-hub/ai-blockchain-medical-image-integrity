@@ -122,7 +122,8 @@ export const apiService = {
   },
 
   async enableMfa(code: string) {
-    const res = await apiClient.post(`/api/auth/mfa/enable?code=${encodeURIComponent(code)}`);
+    // Backend expects MfaConfirmRequest as a JSON body
+    const res = await apiClient.post("/api/auth/mfa/enable", { code });
     return res.data;
   },
 
@@ -198,7 +199,19 @@ export const apiService = {
     purpose?: string;
     expires_at?: string | null;
   }) {
-    const res = await apiClient.post("/api/permissions/consent", payload);
+    // Map legacy UI payload to the backend ConsentCreate schema:
+    // recipient_user_id + actions[] + purpose + mandatory expires_at
+    const allowed = ["view", "download", "analyze", "share", "recover"];
+    const mapped = String(payload.action || "view").toLowerCase();
+    const body: Record<string, unknown> = {
+      recipient_user_id: payload.grantee_id,
+      actions: [allowed.includes(mapped) ? mapped : "view"],
+      purpose: (payload.purpose || "Clinical review").slice(0, 128),
+      expires_at:
+        payload.expires_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+    if (payload.resource_id) body.image_id = payload.resource_id;
+    const res = await apiClient.post("/api/permissions/consent", body);
     return res.data;
   },
 
@@ -213,7 +226,10 @@ export const apiService = {
   },
 
   async emergencyOverride(imageId: number, reason: string) {
-    const res = await apiClient.post(`/api/permissions/emergency-override/${imageId}`, { justification: reason });
+    // Backend accepts `justification` as a required query parameter
+    const res = await apiClient.post(
+      `/api/permissions/emergency-override/${imageId}?justification=${encodeURIComponent(reason)}`
+    );
     return res.data;
   },
 

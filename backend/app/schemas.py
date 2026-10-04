@@ -177,6 +177,10 @@ class MedicalImageResponse(BaseModel):
     quality_score: float
     entropy: float
     created_at: datetime
+    # Integrity fields (real DB columns exposed so the frontend can render
+    # actual trusted-hash + quarantine state instead of undefined values)
+    original_hash: str
+    quarantine_status: bool = False
     class Config:
         from_attributes = True
 

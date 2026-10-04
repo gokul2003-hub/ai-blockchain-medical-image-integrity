@@ -2,15 +2,21 @@ import React from "react";
 
 export interface ConsentItem {
   id: number;
+  patient_id?: number;
+  recipient_user_id?: number;
+  image_id?: number | null;
   grantee_id?: number;
   grantee_name?: string;
   doctor_name?: string;
   doctor_id?: number;
   hospital_name?: string;
   action?: string;
+  actions?: string[];
   permissions?: string[];
   purpose?: string;
+  starts_at?: string;
   expires_at?: string | null;
+  revoked_at?: string | null;
   created_at?: string;
   is_active?: boolean;
 }
@@ -29,9 +35,17 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({
   className = "",
 }) => {
   const doctorName =
-    consent.doctor_name || consent.grantee_name || `Medical Practitioner #${consent.grantee_id || consent.doctor_id || "Unspecified"}`;
+    consent.doctor_name || consent.grantee_name || `Medical Practitioner #${consent.recipient_user_id || consent.grantee_id || consent.doctor_id || "Unspecified"}`;
   const hospital = consent.hospital_name || "Authorized Healthcare Node";
-  const action = consent.action || "DIAGNOSTIC_REVIEW";
+  const action = Array.isArray(consent.actions)
+    ? consent.actions.join(", ")
+    : consent.action || "DIAGNOSTIC_REVIEW";
+  // Real grant lifecycle: revoked_at set or expiry passed = not active
+  const isActive =
+    consent.is_active !== undefined
+      ? consent.is_active !== false
+      : !consent.revoked_at &&
+        (!consent.expires_at || new Date(consent.expires_at).getTime() > Date.now());
 
   return (
     <div
@@ -54,12 +68,12 @@ export const ConsentCard: React.FC<ConsentCardProps> = ({
 
         <span
           className={`px-2 py-0.5 rounded-full font-label-sm text-[10px] font-semibold shrink-0 ${
-            consent.is_active !== false
+            isActive
               ? "bg-secondary-fixed text-on-secondary-fixed"
               : "bg-surface-container text-outline"
           }`}
         >
-          {consent.is_active !== false ? "Active Grant" : "Revoked"}
+          {isActive ? "Active Grant" : "Revoked"}
         </span>
       </div>
 

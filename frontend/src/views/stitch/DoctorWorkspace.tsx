@@ -100,14 +100,15 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
         ]);
 
       if (imgsData.status === "fulfilled" && Array.isArray(imgsData.value)) {
-        setImages(imgsData.value);
+        // Derive display flags from the real quarantine_status DB field
+        setImages(imgsData.value.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
         if (!selectedImageId && imgsData.value.length > 0) {
           onSelectImage(imgsData.value[0].id);
         }
       }
       if (analyticsData.status === "fulfilled") setAnalytics(analyticsData.value);
-      if (recRecordsData.status === "fulfilled" && recRecordsData.value?.records) {
-        setRecoveryRecords(recRecordsData.value.records);
+      if (recRecordsData.status === "fulfilled" && recRecordsData.value?.items) {
+        setRecoveryRecords(recRecordsData.value.items);
       }
       if (consentData.status === "fulfilled" && Array.isArray(consentData.value)) {
         setConsents(consentData.value);
@@ -180,7 +181,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
     try {
       const result = await apiService.recoverImage(imageId);
       setRecoverySuccess(
-        `Self-recovery verified! Restored post-recovery hash: ${result?.post_recovery_hash || "Valid"}`
+        `Self-recovery verified! Restored post-recovery hash: ${result?.recovered_hash || "Valid"}`
       );
       // Fetch authenticated post-recovery preview
       fetchProtectedBlobUrl(`/api/images/preview/${imageId}`)
@@ -198,8 +199,8 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
         apiService.getRecoveryRecords(),
         apiService.getIntegrityEvidence(imageId),
       ]);
-      setImages(updatedImages);
-      if (updatedRecords?.records) setRecoveryRecords(updatedRecords.records);
+      setImages(updatedImages.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
+      if (updatedRecords?.items) setRecoveryRecords(updatedRecords.items);
       if (updatedEvidence) setIntegrityEvidence(updatedEvidence);
     } catch (err: any) {
       setError(err?.response?.data?.detail || err?.message || "Recovery execution failed.");
@@ -220,7 +221,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
   const totalScans = images.length;
   const tamperedScansCount = images.filter((img) => img.is_tampered || img.tampered).length;
   const verifiedScansCount = Math.max(0, totalScans - tamperedScansCount);
-  const recoveryQueueCount = recoveryRecords.filter((r) => r.restoration_status !== "CONFIRMED").length;
+  const recoveryQueueCount = recoveryRecords.filter((r) => r.status !== "VERIFIED").length;
 
   // Self-recovery steps definition
   const recoverySteps: StepItem[] = [

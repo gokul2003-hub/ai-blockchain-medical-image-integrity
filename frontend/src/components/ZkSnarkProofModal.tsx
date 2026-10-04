@@ -25,19 +25,21 @@ export default function ZkSnarkProofModal({ token, onClose }: ZkSnarkProofModalP
     setLoading(true);
     setProofResult(null);
 
-    // Simulate Groth16 zk-SNARK proof generation over BN254 curve
+    // Educational simulation only — this project has NO backend zk-SNARK
+    // prover. Output is an illustrative structure, NOT a real proof.
     setTimeout(() => {
       const pubSignal = "0x8f3c47a" + Math.floor(Math.random() * 1000000).toString(16);
       const mockProof = {
+        notice: "SIMULATED STRUCTURE — not a cryptographically generated proof",
         proof: {
           pi_a: ["0x1a8f9c2b...", "0x2b7e4a1f...", "0x1"],
           pi_b: [["0x3c9d8a...", "0x4e1f2a..."], ["0x5f2a1b...", "0x6c7d8e..."], ["0x1", "0x0"]],
           pi_c: ["0x7e8f9a...", "0x8b1c2d...", "0x1"],
-          protocol: "Groth16 (R1CS)",
+          protocol: "Groth16 (R1CS) — simulated layout",
           curve: "BN254 (alt_bn128)"
         },
         public_inputs: [pubSignal, `0x${parseInt(doctorId).toString(16).padStart(64, "0")}`],
-        verification_status: "VERIFIED (e(π_A, π_B) == e(α, β) * e(Inputs, γ) * e(π_C, δ))"
+        verification_status: "SIMULATED OUTPUT — no pairing verification was performed"
       };
       setProofResult(mockProof);
       setLoading(false);
@@ -69,7 +71,11 @@ export default function ZkSnarkProofModal({ token, onClose }: ZkSnarkProofModalP
           <div>
             <h3 className="font-bold text-slate-100 text-sm">Client-Side Groth16 zk-SNARK Prover</h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              Generate non-interactive zero-knowledge proofs over BN254 to verify credential rights without exposing private identity.
+              Educational simulation of zero-knowledge credential proofs over BN254.
+            </p>
+            <p className="text-[10px] text-amber-500 mt-1 leading-snug">
+              ⚠ Simulation only — this prototype contains no real zk-SNARK prover backend.
+              Output below is illustrative and NOT a verifiable proof.
             </p>
           </div>
         </div>
@@ -110,21 +116,21 @@ export default function ZkSnarkProofModal({ token, onClose }: ZkSnarkProofModalP
             {loading ? (
               <>
                 <RefreshCw className="h-4 w-4 animate-spin" />
-                Compiling R1CS Constraints & Generating Groth16 Proof...
+                Compiling Simulated R1CS Layout…
               </>
             ) : (
               <>
                 <ShieldCheck className="h-4 w-4" />
-                Generate Groth16 Proof (π_A, π_B, π_C)
+                Generate Simulated Proof Structure
               </>
             )}
           </button>
         </form>
 
         {proofResult && (
-          <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-emerald-900/40 text-xs">
+          <div className="space-y-3 bg-slate-950 p-4 rounded-2xl border border-amber-900/50 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-emerald-400 font-bold flex items-center gap-1.5 text-[11px]">
+              <span className="text-amber-400 font-bold flex items-center gap-1.5 text-[11px]">
                 <CheckCircle2 className="h-4 w-4" /> {proofResult.verification_status}
               </span>
               <button

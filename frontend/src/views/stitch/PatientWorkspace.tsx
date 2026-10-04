@@ -51,7 +51,8 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
       ]);
 
       if (imgsRes.status === "fulfilled" && Array.isArray(imgsRes.value)) {
-        setImages(imgsRes.value);
+        // Derive display flag from the real quarantine_status DB field
+        setImages(imgsRes.value.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
       }
       if (consentsRes.status === "fulfilled" && Array.isArray(consentsRes.value)) {
         setConsents(consentsRes.value);
@@ -113,6 +114,39 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
       }
     };
   }, [previewBlobUrl]);
+
+  // Authenticated grid thumbnails: relative /api/<img> URLs bypass both the
+  // configured API base and the Authorization header, so previews are loaded
+  // as protected blobs instead.
+  const [thumbUrls, setThumbUrls] = useState<Record<number, string>>({});
+  useEffect(() => {
+    let active = true;
+    const created: string[] = [];
+    if (images.length === 0) {
+      setThumbUrls({});
+      return;
+    }
+    (async () => {
+      for (const img of images.slice(0, 30)) {
+        try {
+          const url = await fetchProtectedBlobUrl(`/api/images/preview/${img.id}`);
+          if (!active) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          created.push(url);
+          setThumbUrls((prev) => ({ ...prev, [img.id]: url }));
+        } catch {
+          // Preview unavailable for this image — leave placeholder
+        }
+      }
+    })();
+    return () => {
+      active = false;
+      setThumbUrls({});
+      created.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [images]);
 
   const handlePreviewScan = async (scan: any) => {
     setSelectedScan(scan);
@@ -294,11 +328,17 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
                     className="bg-surface-container-lowest rounded-xl shadow-sm border border-surface-container-high/60 overflow-hidden flex flex-col group hover:shadow-md transition-all"
                   >
                     <div className="relative h-44 bg-inverse-surface overflow-hidden flex items-center justify-center">
-                      <img
-                        src={`/api/images/preview/${img.id}`}
-                        alt={img.title || "Scan"}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
-                      />
+                      {thumbUrls[img.id] ? (
+                        <img
+                          src={thumbUrls[img.id]}
+                          alt={img.title || "Scan"}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
+                        />
+                      ) : (
+                        <span className="material-symbols-outlined text-4xl text-on-surface-variant/40">
+                          medical_information
+                        </span>
+                      )}
                       <div className="absolute top-2 left-2 flex items-center gap-1 bg-surface-container-lowest/95 backdrop-blur-md px-2.5 py-0.5 rounded-full text-secondary text-xs">
                         <span
                           className="material-symbols-outlined text-[14px]"
@@ -503,7 +543,6 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
                 >
                   <option value="VIEW">View Only (Diagnostic Review)</option>
                   <option value="DOWNLOAD">Download Decrypted DICOM</option>
-                  <option value="EMERGENCY">Emergency Treatment Override</option>
                 </select>
               </div>
 

@@ -14,7 +14,7 @@ import {
   ShieldAlert,
   Loader2
 } from "lucide-react";
-import { apiService } from "../../services/api";
+import { apiService, API_BASE_URL } from "../../services/api";
 import AuthMethodButtons from "./AuthMethodButtons";
 import RoleAccessCards from "./RoleAccessCards";
 import SecurityNotice from "./SecurityNotice";
@@ -67,7 +67,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
     setVerifyState("verifying");
     setVerifyMsg(null);
     try {
-      const res = await fetch("/api/auth/verify-identity", {
+      const res = await fetch(`${API_BASE_URL}/api/auth/verify-identity`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ role: regRole, identity_id: identityId.trim() }),
@@ -134,10 +134,10 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
         // Call role-specific backend registration endpoint (server-side identity validation)
         const regEndpoint =
-          regRole === "doctor" ? "/api/auth/register/doctor" :
-          regRole === "patient" ? "/api/auth/register/patient" :
-          regRole === "researcher" ? "/api/auth/register/researcher" :
-          "/api/auth/register/admin";
+          regRole === "doctor" ? `${API_BASE_URL}/api/auth/register/doctor` :
+          regRole === "patient" ? `${API_BASE_URL}/api/auth/register/patient` :
+          regRole === "researcher" ? `${API_BASE_URL}/api/auth/register/researcher` :
+          `${API_BASE_URL}/api/auth/register/admin`;
 
         const regPayload: Record<string, unknown> = {
           identity_id: identityId.trim(),
@@ -180,14 +180,8 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           mfa_code: mfaCode.trim() || undefined,
         });
 
-        if (data.mfa_required) {
-          setShowMfa(true);
-          setError(null);
-          setSuccessMsg("Additional verification required. Enter your 6-digit TOTP code.");
-          setLoading(false);
-          return;
-        }
-
+        // A successful response means credentials + optional MFA already
+        // validated server-side (backend returns mfa_enabled, never mfa_required).
         const role = (data.role || "patient").toLowerCase();
         setSuccessMsg("Cryptographic identity verified. Redirecting to workspace...");
         
@@ -211,7 +205,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         const detail = err.response.data?.detail;
         
         if (status === 401) {
-          setError("Invalid username or password.");
+          if (typeof detail === "string" && detail.includes("MFA code")) {
+            // Backend explicitly demands a TOTP/recovery code — show MFA input
+            setShowMfa(true);
+            setError(null);
+            setSuccessMsg("Additional verification required. Enter your 6-digit TOTP code.");
+          } else {
+            setError("Invalid username or password.");
+          }
         } else if (status === 403) {
           setError("You are not authorized to access this workspace.");
         } else if (status === 423) {

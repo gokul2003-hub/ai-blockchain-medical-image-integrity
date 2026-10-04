@@ -54,8 +54,10 @@ export const AccessGovernancePanel: React.FC = () => {
           {consents.map((c: any) => (
             <tr key={c.id} className="hover:bg-surface-container-low/50">
               <td className="py-2.5 px-3 font-code-sm text-primary font-semibold">#{c.id}</td>
-              <td className="py-2.5 px-3 text-on-surface">User #{c.grantee_id}</td>
-              <td className="py-2.5 px-3 text-on-surface-variant">{c.action}</td>
+              <td className="py-2.5 px-3 text-on-surface">User #{c.recipient_user_id ?? c.grantee_id ?? "—"}</td>
+              <td className="py-2.5 px-3 text-on-surface-variant">
+                {Array.isArray(c.actions) ? c.actions.join(", ") : c.action || "—"}
+              </td>
               <td className="py-2.5 px-3 text-on-surface-variant">{c.purpose || "—"}</td>
               <td className="py-2.5 px-3 text-on-surface-variant">
                 {c.expires_at ? new Date(c.expires_at).toLocaleDateString() : "No expiry"}
@@ -63,12 +65,18 @@ export const AccessGovernancePanel: React.FC = () => {
               <td className="py-2.5 px-3">
                 <span
                   className={`px-2 py-0.5 rounded-full font-label-sm text-[10px] font-semibold ${
-                    c.revoked
+                    c.revoked_at || c.revoked
                       ? "bg-error-container text-on-error-container"
-                      : "bg-secondary-fixed text-on-secondary-fixed"
+                      : c.expires_at && new Date(c.expires_at).getTime() < Date.now()
+                        ? "bg-tertiary-container text-on-tertiary-container"
+                        : "bg-secondary-fixed text-on-secondary-fixed"
                   }`}
                 >
-                  {c.revoked ? "REVOKED" : "ACTIVE"}
+                  {c.revoked_at || c.revoked
+                    ? "REVOKED"
+                    : c.expires_at && new Date(c.expires_at).getTime() < Date.now()
+                      ? "EXPIRED"
+                      : "ACTIVE"}
                 </span>
               </td>
             </tr>
