@@ -13,6 +13,7 @@ import { AuditLedger } from "../../components/stitch/AuditLedger";
 import { ConsentCard } from "../../components/stitch/ConsentCard";
 import { LoadingState, EmptyState, ErrorState } from "../../components/stitch/States";
 import { FileUploadZone } from "../../components/stitch/FileUploadZone";
+import IntegrityProof from "../IntegrityProof";
 
 interface DoctorWorkspaceProps {
   token: string;
@@ -743,6 +744,13 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
             <div className="flex items-center gap-2">
               <button
+                onClick={() => onNavigate("integrity-proof")}
+                className="px-3 py-2 rounded-lg bg-surface-container text-primary font-label-md text-xs hover:bg-surface-container-high shadow-sm flex items-center gap-1.5 border border-primary/20"
+              >
+                <span className="material-symbols-outlined text-sm">verified_user</span>
+                <span>Integrity Proof &amp; Recovery</span>
+              </button>
+              <button
                 onClick={() => onNavigate("self-recovery-studio")}
                 className="px-3 py-2 rounded-lg bg-tertiary text-on-tertiary font-label-md text-xs hover:bg-tertiary-container shadow-sm flex items-center gap-1.5"
               >
@@ -774,6 +782,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
             <TrustScoreCard score={integrityEvidence?.trust_score !== undefined && integrityEvidence?.trust_score !== null ? integrityEvidence.trust_score : (selectedScan?.is_tampered ? 15 : 95)} />
           </div>
         </div>
+      )}
+
+      {activeSubPath === "integrity-proof" && (
+        <IntegrityProof token={token} />
       )}
 
       {/* ------------------------------------------------------------------ */}

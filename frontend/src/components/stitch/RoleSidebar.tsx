@@ -106,6 +106,7 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
               { id: "ai-tamper-forensics", label: "AI Forensic Analysis", icon: "biotech" },
               { id: "risk-analysis", label: "Risk Analysis", icon: "crisis_alert" },
               { id: "self-recovery-studio", label: "Self-Recovery", icon: "healing" },
+              { id: "integrity-proof", label: "Integrity Proof", icon: "verified_user" },
             ])}
             {renderNavGroup("Governance & Trust", [
               { id: "blockchain-audit-and-reports", label: "Blockchain Audit", icon: "verified" },

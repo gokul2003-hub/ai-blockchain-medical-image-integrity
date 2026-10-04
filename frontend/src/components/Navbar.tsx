@@ -35,6 +35,7 @@ const viewLabelMap: Record<string, string> = {
   "tamper-detection": "Tamper Detection",
   "tamper-localization": "Tamper Localization",
   "forensic-studio": "AI Tamper Forensics Studio",
+  "integrity-proof": "Integrity Proof & Self-Recovery",
   "explainable-ai": "Explainable AI",
   "recovery-center": "Recovery Center",
   "recovery-history": "Recovery History",

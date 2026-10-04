@@ -341,6 +341,19 @@ def run_forensic_analysis(image_id: str) -> dict[str, Any]:
     recovered_sha3 = sha3_hash(recovered_bytes)
     post_recovery_match = recovered_sha3 == trusted_sha3
 
+    # --- 7. Actual pixel difference (computed from real image data) ---
+    diff = cv2.absdiff(cur_img, trusted_img)
+    diff_norm = cv2.normalize(diff, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    changed_pixels = int(np.sum(diff > 0))
+    total_pixels = int(diff.size)
+    diff_color = cv2.applyColorMap(diff_norm, cv2.COLORMAP_JET)
+    diff_b64 = _b64(cv2.imencode(".png", diff_color)[1].tobytes())
+    # Difference overlay: dim original + highlight changed pixels
+    diff_overlay = cv2.cvtColor(cur_img, cv2.COLOR_GRAY2BGR)
+    changed_mask = diff > 0
+    diff_overlay[changed_mask] = (0, 0, 255)
+    diff_overlay_b64 = _b64(cv2.imencode(".png", diff_overlay)[1].tobytes())
+
     # Images for frontend
     orig_b64 = _b64(original_bytes)
     tamp_b64 = _b64(tampered_bytes)
@@ -370,6 +383,15 @@ def run_forensic_analysis(image_id: str) -> dict[str, Any]:
             ),
         },
         "dit_state": dit_state,
+        "difference": {
+            "available": True,
+            "changed_pixels": changed_pixels,
+            "total_pixels": total_pixels,
+            "changed_pixel_percentage": round(changed_pixels / total_pixels * 100.0, 4),
+            "difference_map_base64": diff_b64,
+            "difference_overlay_base64": diff_overlay_b64,
+            "note": "Computed as absolute per-pixel difference between trusted original and current image.",
+        },
         "ai": {
             "tamper_detected": bool(ai_result.get("tampered_detected")),
             "tampered_percentage": ai_result.get("tampered_percentage"),
