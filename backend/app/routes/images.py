@@ -450,6 +450,7 @@ async def preview_medical_image(
     Authenticated media preview endpoint.
     Permits authorized users (patient owner, consent recipient, doctor/admin)
     to safely view decrypted or preview scans directly in the UI.
+    Performs continuous integrity verification on every access.
     """
     image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
     if not image:
@@ -472,6 +473,20 @@ async def preview_medical_image(
     except Exception as e:
         logger.warning(f"Decryption failed during preview for image ID {image.id}: {e}")
         return Response(content=b"", status_code=500)
+
+    # 7. Continuous Integrity Verification on every access
+    current_hash = sha3_hash(decrypted_bytes)
+    if current_hash != image.original_hash:
+        logger.error(f"CRYPTOGRAPHIC TAMPERING DETECTED during preview for image ID {image_id}")
+        # Record verification failure on blockchain
+        blockchain_service.record_verification(db, image_id, "VERIFY_FAILED", {"user_id": current_user.id, "context": "preview"})
+        # Trigger tamper pathway
+        return await handle_tampering_pathway(
+            db, request, image, decrypted_bytes, current_user.id, current_hash, False
+        )
+
+    # Record successful verification on blockchain
+    blockchain_service.record_verification(db, image_id, "VERIFIED", {"user_id": current_user.id, "context": "preview"})
 
     if image.quarantine_status:
         watermarked = watermark_image(decrypted_bytes, "SECURITY ALERT: QUARANTINED SCAN")
