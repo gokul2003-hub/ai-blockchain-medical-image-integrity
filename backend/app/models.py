@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Text, Index, CheckConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Float, Text, Index, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -444,3 +444,109 @@ class IntegrityEvent(Base):
 
     image_version = relationship("ImageVersion", backref="integrity_events")
     actor = relationship("User")
+
+
+# =============================================================================
+# Identity Registry Models (Phase: Secure Role-Based Registration)
+# =============================================================================
+
+class DoctorIdentity(Base):
+    """Authorized doctor identities for registration validation."""
+    __tablename__ = "doctor_identities"
+    __table_args__ = (
+        UniqueConstraint("doctor_id", name="uq_doctor_identity_id"),
+        Index("idx_doctor_identity_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    doctor_id = Column(String(32), unique=True, nullable=False, index=True)  # e.g., DR-123456
+    full_name = Column(String(255), nullable=False)
+    license_number = Column(String(128), unique=True, nullable=False)
+    specialization = Column(String(255), nullable=True)
+    institution = Column(String(255), nullable=True)
+    institutional_email = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_registered = Column(Boolean, default=False, nullable=False)
+    registered_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    registered_user = relationship("User", foreign_keys=[registered_user_id])
+
+
+class PatientIdentity(Base):
+    """Authorized patient identities for registration validation."""
+    __tablename__ = "patient_identities"
+    __table_args__ = (
+        UniqueConstraint("patient_id", name="uq_patient_identity_id"),
+        Index("idx_patient_identity_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    patient_id = Column(String(32), unique=True, nullable=False, index=True)  # e.g., PT-123456
+    full_name = Column(String(255), nullable=False)
+    date_of_birth = Column(String(32), nullable=True)
+    gender = Column(String(32), nullable=True)
+    blood_group = Column(String(32), nullable=True)
+    institutional_email = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_registered = Column(Boolean, default=False, nullable=False)
+    registered_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    registered_user = relationship("User", foreign_keys=[registered_user_id])
+
+
+class ResearcherIdentity(Base):
+    """Authorized researcher identities for registration validation."""
+    __tablename__ = "researcher_identities"
+    __table_args__ = (
+        UniqueConstraint("researcher_id", name="uq_researcher_identity_id"),
+        Index("idx_researcher_identity_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    researcher_id = Column(String(32), unique=True, nullable=False, index=True)  # e.g., RES-123456
+    full_name = Column(String(255), nullable=False)
+    institution = Column(String(255), nullable=False)
+    department = Column(String(255), nullable=True)
+    institutional_email = Column(String(255), nullable=False)
+    approval_status = Column(String(32), default="pending", nullable=False)  # pending, approved, rejected
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_registered = Column(Boolean, default=False, nullable=False)
+    registered_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    approver = relationship("User", foreign_keys=[approved_by])
+    registered_user = relationship("User", foreign_keys=[registered_user_id])
+
+
+class AdminIdentity(Base):
+    """Pre-authorized admin identities for registration validation."""
+    __tablename__ = "admin_identities"
+    __table_args__ = (
+        UniqueConstraint("admin_id", name="uq_admin_identity_id"),
+        Index("idx_admin_identity_active", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(String(32), unique=True, nullable=False, index=True)  # e.g., ADM-123456
+    full_name = Column(String(255), nullable=False)
+    institution = Column(String(255), nullable=False)
+    official_email = Column(String(255), nullable=False)
+    role_level = Column(String(32), default="hospital_admin", nullable=False)  # hospital_admin, super_admin
+    is_pre_provisioned = Column(Boolean, default=True, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False, index=True)
+    is_registered = Column(Boolean, default=False, nullable=False)
+    registered_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, unique=True)
+    provisioned_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provisioned_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    provisioner = relationship("User", foreign_keys=[provisioned_by])
+    registered_user = relationship("User", foreign_keys=[registered_user_id])

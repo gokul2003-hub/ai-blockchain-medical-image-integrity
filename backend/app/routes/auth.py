@@ -35,6 +35,22 @@ from app.auth import (
     oauth2_scheme,
 )
 from app.identity import IdentityProvisioningError, ensure_user_identity
+from app.identity_registry import (
+    IdentityRegistryService,
+    DoctorRegistrationRequest,
+    PatientRegistrationRequest,
+    ResearcherRegistrationRequest,
+    AdminRegistrationRequest,
+    IdentityVerificationRequest,
+    IdentityVerificationResponse,
+    IdentityVerificationStatus,
+    validate_id_format,
+    get_id_format_description,
+    DoctorIdentity,
+    PatientIdentity,
+    ResearcherIdentity,
+    AdminIdentity,
+)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 admin_provision_guard = RoleChecker(["super_admin", "hospital_admin"])
@@ -216,6 +232,406 @@ async def provision_privileged_user(
     db.refresh(db_user)
 
     logger.info(f"User {db_user.username} successfully provisioned by {current_user.username}")
+    return db_user
+
+
+@router.post("/verify-identity", response_model=IdentityVerificationResponse)
+async def verify_identity(
+    verify_in: IdentityVerificationRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify a role-specific identity ID against the authorized registry.
+    This endpoint allows the frontend to validate an identity before attempting registration.
+    """
+    logger.info(f"Identity verification request for role: {verify_in.role}, ID: {verify_in.identity_id}")
+
+    # Validate ID format first
+    if not validate_id_format(verify_in.role, verify_in.identity_id):
+        return IdentityVerificationResponse(
+            success=False,
+            status=IdentityVerificationStatus.INVALID_FORMAT.value,
+            message=f"Invalid ID format for role {verify_in.role}. Expected: {get_id_format_description(verify_in.role)}",
+            role=verify_in.role,
+            identity_id=verify_in.identity_id,
+            details={"expected_format": get_id_format_description(verify_in.role)}
+        )
+
+    # Validate against registry
+    registry = IdentityRegistryService(db)
+    result = registry.validate_identity(verify_in.role, verify_in.identity_id)
+
+    return IdentityVerificationResponse(
+        success=result.success,
+        status=result.status.value,
+        message=result.message,
+        role=verify_in.role,
+        identity_id=verify_in.identity_id,
+        details={
+            "expected_format": get_id_format_description(verify_in.role),
+            "identity_record_id": result.identity_record.id if result.identity_record else None
+        } if result.success else {"expected_format": get_id_format_description(verify_in.role)}
+    )
+
+
+@router.post("/register/doctor", response_model=UserResponse)
+async def register_doctor(
+    reg_in: DoctorRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Doctor registration with server-side identity validation.
+    Requires a verified Doctor ID (format: DR-XXXXXX) from the authorized registry.
+    """
+    logger.info(f"Doctor registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
+
+    # Verify identity against registry
+    registry = IdentityRegistryService(db)
+    validation = registry.validate_doctor_id(reg_in.identity_id)
+    if not validation.success:
+        logger.warning(f"Doctor registration rejected: {validation.message} (ID: {reg_in.identity_id})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unable to verify the supplied identity information."
+        )
+
+    # Check for existing user
+    existing_user = db.query(User).filter(
+        (User.username == reg_in.username) | (User.email == reg_in.email)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered"
+        )
+
+    # Validate password
+    validate_password_policy(reg_in.password)
+    hashed_pwd = get_password_hash(reg_in.password)
+
+    # Create user with doctor role
+    db_user = User(
+        username=reg_in.username,
+        email=reg_in.email,
+        hashed_password=hashed_pwd,
+        role="doctor",
+        hospital_id=reg_in.hospital_id,
+        mfa_enabled=False,
+        is_active=True
+    )
+    db.add(db_user)
+    db.flush()
+    db.refresh(db_user)
+
+    # Initialize security state
+    get_security_state(db, db_user)
+
+    # Create doctor profile
+    doctor_profile = validation.identity_record
+    doc_prof = DoctorProfile(
+        user_id=db_user.id,
+        specialization=reg_in.specialization or doctor_profile.specialization or "Radiology & Medical Imaging",
+        license_number=reg_in.license_number or doctor_profile.license_number or f"LIC-{db_user.id:04d}"
+    )
+    db.add(doc_prof)
+
+    # Provision DID and credential
+    try:
+        ensure_user_identity(db, db_user)
+    except IdentityProvisioningError as exc:
+        db.rollback()
+        logger.error(f"Doctor registration aborted: identity provisioning failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account could not be provisioned with a decentralized identity. Please retry."
+        )
+
+    # Mark identity as registered
+    registry.register_identity("doctor", reg_in.identity_id, db_user)
+
+    # Audit log
+    audit = AuditLog(
+        user_id=db_user.id,
+        action="REGISTER",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        status="SUCCESS",
+        details=f"Doctor {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(f"Doctor registration completed: {db_user.username} (DID: {db_user.did})")
+    return db_user
+
+
+@router.post("/register/patient", response_model=UserResponse)
+async def register_patient(
+    reg_in: PatientRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Patient registration with server-side identity validation.
+    Requires a verified Patient ID (format: PT-XXXXXX) from the authorized registry.
+    """
+    logger.info(f"Patient registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
+
+    # Verify identity against registry
+    registry = IdentityRegistryService(db)
+    validation = registry.validate_patient_id(reg_in.identity_id)
+    if not validation.success:
+        logger.warning(f"Patient registration rejected: {validation.message} (ID: {reg_in.identity_id})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unable to verify the supplied identity information."
+        )
+
+    # Check for existing user
+    existing_user = db.query(User).filter(
+        (User.username == reg_in.username) | (User.email == reg_in.email)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered"
+        )
+
+    # Validate password
+    validate_password_policy(reg_in.password)
+    hashed_pwd = get_password_hash(reg_in.password)
+
+    # Create user with patient role
+    db_user = User(
+        username=reg_in.username,
+        email=reg_in.email,
+        hashed_password=hashed_pwd,
+        role="patient",
+        hospital_id=None,
+        mfa_enabled=False,
+        is_active=True
+    )
+    db.add(db_user)
+    db.flush()
+    db.refresh(db_user)
+
+    # Initialize security state
+    get_security_state(db, db_user)
+
+    # Create patient profile
+    patient_profile = validation.identity_record
+    prof = PatientProfile(
+        user_id=db_user.id,
+        date_of_birth=reg_in.date_of_birth or patient_profile.date_of_birth or "2000-01-01",
+        gender=reg_in.gender or patient_profile.gender or "Unspecified",
+        blood_group=reg_in.blood_group or patient_profile.blood_group or "O Positive"
+    )
+    db.add(prof)
+
+    # Provision DID and credential
+    try:
+        ensure_user_identity(db, db_user)
+    except IdentityProvisioningError as exc:
+        db.rollback()
+        logger.error(f"Patient registration aborted: identity provisioning failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account could not be provisioned with a decentralized identity. Please retry."
+        )
+
+    # Mark identity as registered
+    registry.register_identity("patient", reg_in.identity_id, db_user)
+
+    # Audit log
+    audit = AuditLog(
+        user_id=db_user.id,
+        action="REGISTER",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        status="SUCCESS",
+        details=f"Patient {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(f"Patient registration completed: {db_user.username} (DID: {db_user.did})")
+    return db_user
+
+
+@router.post("/register/researcher", response_model=UserResponse)
+async def register_researcher(
+    reg_in: ResearcherRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Researcher registration with server-side identity validation.
+    Requires a verified Researcher ID (format: RES-XXXXXX) from the authorized registry.
+    Only approved researchers can register.
+    """
+    logger.info(f"Researcher registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
+
+    # Verify identity against registry
+    registry = IdentityRegistryService(db)
+    validation = registry.validate_researcher_id(reg_in.identity_id)
+    if not validation.success:
+        logger.warning(f"Researcher registration rejected: {validation.message} (ID: {reg_in.identity_id})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unable to verify the supplied identity information."
+        )
+
+    # Check for existing user
+    existing_user = db.query(User).filter(
+        (User.username == reg_in.username) | (User.email == reg_in.email)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered"
+        )
+
+    # Validate password
+    validate_password_policy(reg_in.password)
+    hashed_pwd = get_password_hash(reg_in.password)
+
+    # Create user with researcher role
+    db_user = User(
+        username=reg_in.username,
+        email=reg_in.email,
+        hashed_password=hashed_pwd,
+        role="researcher",
+        hospital_id=None,
+        mfa_enabled=False,
+        is_active=True
+    )
+    db.add(db_user)
+    db.flush()
+    db.refresh(db_user)
+
+    # Initialize security state
+    get_security_state(db, db_user)
+
+    # Provision DID and credential
+    try:
+        ensure_user_identity(db, db_user)
+    except IdentityProvisioningError as exc:
+        db.rollback()
+        logger.error(f"Researcher registration aborted: identity provisioning failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account could not be provisioned with a decentralized identity. Please retry."
+        )
+
+    # Mark identity as registered
+    registry.register_identity("researcher", reg_in.identity_id, db_user)
+
+    # Audit log
+    audit = AuditLog(
+        user_id=db_user.id,
+        action="REGISTER",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        status="SUCCESS",
+        details=f"Researcher {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(f"Researcher registration completed: {db_user.username} (DID: {db_user.did})")
+    return db_user
+
+
+@router.post("/register/admin", response_model=UserResponse)
+async def register_admin(
+    reg_in: AdminRegistrationRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Hospital Administrator registration with strict pre-authorized identity validation.
+    Requires a pre-provisioned Admin ID (format: ADM-XXXXXX) from the authorized registry.
+    This is the most restricted registration endpoint - no arbitrary admin signup.
+    """
+    logger.info(f"Admin registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
+
+    # Verify identity against registry
+    registry = IdentityRegistryService(db)
+    validation = registry.validate_admin_id(reg_in.identity_id)
+    if not validation.success:
+        logger.warning(f"Admin registration rejected: {validation.message} (ID: {reg_in.identity_id})")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin registration requires pre-authorized identity provisioning."
+        )
+
+    # Check for existing user
+    existing_user = db.query(User).filter(
+        (User.username == reg_in.username) | (User.email == reg_in.email)
+    ).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already registered"
+        )
+
+    # Validate password
+    validate_password_policy(reg_in.password)
+    hashed_pwd = get_password_hash(reg_in.password)
+
+    # Create user with hospital_admin role
+    db_user = User(
+        username=reg_in.username,
+        email=reg_in.email,
+        hashed_password=hashed_pwd,
+        role=reg_in.role_level,  # hospital_admin or super_admin
+        hospital_id=None,
+        mfa_enabled=False,
+        is_active=True
+    )
+    db.add(db_user)
+    db.flush()
+    db.refresh(db_user)
+
+    # Initialize security state
+    get_security_state(db, db_user)
+
+    # Provision DID and credential
+    try:
+        ensure_user_identity(db, db_user)
+    except IdentityProvisioningError as exc:
+        db.rollback()
+        logger.error(f"Admin registration aborted: identity provisioning failed: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Account could not be provisioned with a decentralized identity. Please retry."
+        )
+
+    # Mark identity as registered
+    registry.register_identity("hospital_admin", reg_in.identity_id, db_user)
+
+    # Audit log
+    audit = AuditLog(
+        user_id=db_user.id,
+        action="REGISTER",
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+        status="SUCCESS",
+        details=f"Admin {db_user.username} registered with pre-authorized identity {reg_in.identity_id}; actor_did={db_user.did}",
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(audit)
+    db.commit()
+    db.refresh(db_user)
+
+    logger.info(f"Admin registration completed: {db_user.username} (Role: {db_user.role}, DID: {db_user.did})")
     return db_user
 
 
