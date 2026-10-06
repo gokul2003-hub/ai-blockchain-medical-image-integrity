@@ -1,18 +1,5 @@
 import React from "react";
-import { 
-  ShieldCheck, 
-  Activity, 
-  Cpu, 
-  Eye, 
-  AlertCircle, 
-  Crosshair,
-  Lock,
-  Layers
-} from "lucide-react";
-import IntegrityAnalysisCard from "./IntegrityAnalysisCard";
-import SecurityStatusCard from "./SecurityStatusCard";
-import FeatureSecurityCards from "./FeatureSecurityCards";
-import TrustedUsers from "./TrustedUsers";
+import { ShieldCheck, Crosshair } from "lucide-react";
 
 export const LoginHero: React.FC = () => {
   return (
@@ -49,15 +36,14 @@ export const LoginHero: React.FC = () => {
           </div>
           
           <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold tracking-tight font-['Outfit'] leading-[1.15] text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-300">
-            Secure Medical Images <br />
+            Secure Medical Imaging, <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-300">
-              Trusted Healthcare
-            </span> <br />
-            Smarter Tomorrow
+              Trusted Clinical Decisions
+            </span>
           </h1>
 
           <p className="mt-3 text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl font-['Public_Sans']">
-            An AI-Driven Blockchain Framework for Continuous Medical Image Integrity Verification, Tamper Forensics, and Self-Recovery.
+            AI-powered tamper forensics, blockchain-backed auditability, and secure medical image integrity.
           </p>
         </div>
       </div>
@@ -162,7 +148,7 @@ export const LoginHero: React.FC = () => {
             </div>
             <div className="absolute bottom-2 left-2 text-[10px] font-mono text-emerald-400 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span>PS3.15 CERTIFIED</span>
+              <span>DICOM SERIES</span>
             </div>
             <div className="absolute bottom-2 right-2 text-[10px] font-mono text-cyan-400">
               SRM-SWIN RESIDUAL
@@ -178,32 +164,16 @@ export const LoginHero: React.FC = () => {
                   AI Tamper Detection
                 </div>
                 <div className="text-[9px] text-slate-300 font-mono">
-                  Region: Frontal Lobe • Risk: High (0.87) • Status: Altered
+                  Illustrative overlay — live analysis after sign-in
                 </div>
               </div>
             </div>
 
             <div className="hidden sm:block text-[9px] text-slate-400 font-mono bg-slate-900/80 px-2 py-1 rounded border border-slate-800">
-              Static Forensic Simulation
+              Illustrative UI
             </div>
           </div>
         </div>
-
-        {/* Floating Glass Cards Overlaying Scan on Desktop/Tablet */}
-        <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          <IntegrityAnalysisCard />
-          <SecurityStatusCard score={98} isIllustrative={true} />
-        </div>
-      </div>
-
-      {/* Feature Cards Grid (4 Compact Cards) */}
-      <div className="relative z-10 my-3">
-        <FeatureSecurityCards />
-      </div>
-
-      {/* Trusted Users Bottom-Left Section */}
-      <div className="relative z-10 mt-2">
-        <TrustedUsers />
       </div>
 
     </div>

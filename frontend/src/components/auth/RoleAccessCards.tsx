@@ -14,37 +14,33 @@ export const RoleAccessCards: React.FC<RoleAccessCardsProps> = ({
     {
       name: "Doctor / Radiologist",
       key: "doctor",
-      desc: "View and analyze authorized medical images with AI tamper overlays.",
+      desc: "Clinical image review and AI forensic analysis",
+      action: "Continue as Doctor",
       icon: Stethoscope,
-      badge: "Clinical Care",
-      badgeColor: "bg-cyan-50 text-cyan-700 border-cyan-200",
       accent: "text-cyan-600",
     },
     {
       name: "Hospital Administrator",
       key: "admin",
-      desc: "Manage users, audit security events, and configure governance policies.",
+      desc: "Governance, access control and audit oversight",
+      action: "Explore Admin",
       icon: ShieldCheck,
-      badge: "Governance",
-      badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
       accent: "text-blue-600",
     },
     {
       name: "Authorized Researcher",
       key: "researcher",
-      desc: "Analyze approved, privacy-preserved, and de-identified DICOM cohorts.",
+      desc: "Secure access to approved research imaging",
+      action: "Continue as Researcher",
       icon: Microscope,
-      badge: "Analytics",
-      badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
       accent: "text-purple-600",
     },
     {
       name: "Patient",
       key: "patient",
-      desc: "Access personal radiographic studies, consent logs, and integrity status.",
+      desc: "View your authorized medical imaging records",
+      action: "Continue as Patient",
       icon: UserCheck,
-      badge: "Personal Health",
-      badgeColor: "bg-teal-50 text-teal-700 border-teal-200",
       accent: "text-teal-600",
     },
   ];
@@ -69,28 +65,34 @@ export const RoleAccessCards: React.FC<RoleAccessCardsProps> = ({
               key={r.name}
               type="button"
               onClick={() => onSelectRoleInfo && onSelectRoleInfo(r.key)}
-              className={`p-2.5 rounded-xl border text-left transition-all duration-200 ${
+              aria-label={`${r.action} — ${r.name}. ${r.desc}`}
+              aria-pressed={isSelected}
+              className={`group p-3 rounded-xl border text-left transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50 ${
                 isSelected
                   ? "border-cyan-500 bg-cyan-50/40 shadow-sm"
-                  : "border-slate-150 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300"
+                  : "border-slate-150 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-300 hover:shadow-sm"
               }`}
             >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-1.5">
-                  <Icon className={`w-3.5 h-3.5 ${r.accent}`} />
-                  <span className="text-xs font-semibold text-slate-800">
-                    {r.name}
-                  </span>
-                </div>
-                <span
-                  className={`text-[9px] font-semibold px-1.5 py-0.2 rounded border ${r.badgeColor}`}
-                >
-                  {r.badge}
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <Icon className={`w-4 h-4 shrink-0 ${r.accent}`} />
+                <span className="text-[13px] font-bold text-slate-800 leading-tight">
+                  {r.name}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 leading-snug">
+
+              <p className="text-xs text-slate-500 leading-snug mb-2.5">
                 {r.desc}
               </p>
+
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 group-hover:text-slate-900">
+                {r.action}
+                <ArrowUpRight
+                  className={`w-3.5 h-3.5 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 ${
+                    isSelected ? "text-cyan-600" : "text-slate-400 group-hover:text-slate-600"
+                  }`}
+                  aria-hidden="true"
+                />
+              </span>
             </button>
           );
         })}

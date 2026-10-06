@@ -57,7 +57,11 @@ export const RiskScoreCard: React.FC<RiskScoreCardProps> = ({
           {displayScore !== null ? `${displayScore}/100` : "N/A"}
         </span>
         <span className="font-body-sm text-xs text-on-surface-variant">
-          {isHighRisk ? "Adversarial Inpainting Likely" : "Integrity Threshold Passed"}
+          {displayScore === null
+            ? "No risk assessment yet"
+            : isHighRisk
+            ? "Adversarial Inpainting Likely"
+            : "Integrity Threshold Passed"}
         </span>
       </div>
 

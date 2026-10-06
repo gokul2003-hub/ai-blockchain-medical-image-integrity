@@ -49,20 +49,32 @@ export const AuthMethodButtons: React.FC = () => {
           <button
             type="button"
             onClick={handleDidClick}
-            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-sm transition-all hover:border-cyan-500/40 hover:text-cyan-800"
+            aria-haspopup="dialog"
+            className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-sm transition-all hover:border-cyan-500/40 hover:text-cyan-800"
           >
-            <Cpu className="w-4 h-4 text-cyan-600" />
-            <span className="truncate">Login with DID / VC</span>
+            <span className="flex items-center justify-center gap-2">
+              <Cpu className="w-4 h-4 text-cyan-600" />
+              <span className="truncate">Login with DID / VC</span>
+            </span>
+            <span className="text-[10px] font-normal text-slate-500">
+              View DID / VC sign-in availability
+            </span>
           </button>
 
           {/* FIDO2 Button */}
           <button
             type="button"
             onClick={handleFido2Click}
-            className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-sm transition-all hover:border-blue-500/40 hover:text-blue-800"
+            aria-haspopup="dialog"
+            className="flex flex-col items-center justify-center gap-1 py-2.5 px-3 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-slate-700 text-xs font-semibold shadow-sm transition-all hover:border-blue-500/40 hover:text-blue-800"
           >
-            <KeyRound className="w-4 h-4 text-blue-600" />
-            <span className="truncate">Login with FIDO2</span>
+            <span className="flex items-center justify-center gap-2">
+              <KeyRound className="w-4 h-4 text-blue-600" />
+              <span className="truncate">Login with FIDO2</span>
+            </span>
+            <span className="text-[10px] font-normal text-slate-500">
+              View security key sign-in availability
+            </span>
           </button>
         </div>
       </div>
@@ -97,6 +109,7 @@ export const AuthMethodButtons: React.FC = () => {
               </div>
               <button
                 type="button"
+                aria-label="Close dialog"
                 onClick={() => setModalState({ ...modalState, open: false })}
                 className="text-slate-400 hover:text-slate-700 p-1 rounded-lg"
               >

@@ -27,6 +27,20 @@
   direction: ltr;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'liga';
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Icon-token resilience: icons opt in via data-icon so the ligature word is
+   rendered through a pseudo-element — raw tokens (e.g. "grid_view") never
+   appear in DOM text extraction (textContent/innerText). */
+.material-symbols-outlined[data-icon]::before {
+  content: attr(data-icon);
+}
+
+/* Never expose raw ligature words while the icon font is loading. */
+html.icons-pending .material-symbols-outlined {
+  visibility: hidden;
 }
 
 /* Stitch Design System Typography Classes */
@@ -218,11 +232,67 @@
 .light-mode .bg-slate-950 {
   background-color: #e2e8f0 !important;
 }
+.light-mode .text-slate-200 { color: #1e293b !important; }
+.light-mode .text-slate-300 { color: #334155 !important; }
+.light-mode .text-slate-500 { color: #64748b !important; }
+.light-mode .bg-slate-800 { background-color: #f1f5f9 !important; }
+.light-mode .bg-slate-800\/60 { background-color: rgba(241, 245, 249, 0.9) !important; }
+.light-mode .bg-slate-900\/60 { background-color: rgba(255, 255, 255, 0.92) !important; }
+.light-mode .bg-slate-700 { background-color: #e2e8f0 !important; }
+.light-mode .bg-slate-700\/60 { background-color: rgba(226, 232, 240, 0.9) !important; }
+.light-mode .bg-black\/60 { background-color: rgba(241, 245, 249, 0.92) !important; }
+.light-mode .bg-black { background-color: #f1f5f9 !important; }
+.light-mode .border-slate-700 { border-color: #cbd5e1 !important; }
+.light-mode .border-slate-800\/60 { border-color: rgba(203, 213, 225, 0.8) !important; }
+.light-mode .border-slate-700\/60 { border-color: rgba(203, 213, 225, 0.8) !important; }
+.light-mode .text-slate-100 { color: #0f172a !important; }
+.light-mode .text-white { color: #0f172a !important; }
+.light-mode .hover\:bg-slate-800:hover { background-color: #e2e8f0 !important; }
+.light-mode .hover\:bg-slate-700:hover { background-color: #e2e8f0 !important; }
+
+/* Stitch semantic design tokens — light values (tokens are static dark hex,
+   so light mode maps the shared utilities to daylight equivalents). */
+.light-mode .text-on-surface { color: #0f172a !important; }
+.light-mode .text-on-surface-variant { color: #475569 !important; }
+.light-mode .text-outline { color: #64748b !important; }
+.light-mode .bg-surface-container-lowest { background-color: #ffffff !important; }
+.light-mode .bg-surface-container-low { background-color: #f8fafc !important; }
+.light-mode .bg-surface-container { background-color: #f1f5f9 !important; }
+.light-mode .bg-surface-container-high { background-color: #e2e8f0 !important; }
+.light-mode .bg-surface-container-highest { background-color: #cbd5e1 !important; }
+.light-mode .border-surface-container-low { border-color: #e2e8f0 !important; }
+.light-mode .border-surface-container-high { border-color: #cbd5e1 !important; }
+.light-mode .hover\:bg-surface-container-high:hover { background-color: #e2e8f0 !important; }
+.light-mode .hover\:text-on-surface:hover { color: #0f172a !important; }
+.light-mode .bg-inverse-surface { background-color: #e2e8f0 !important; }
+.light-mode .text-inverse-on-surface { color: #0f172a !important; }
+.light-mode .text-on-secondary-container { color: #065f46 !important; }
+
+/* Opacity-suffixed variants actually used across the stitch screens */
+.light-mode .bg-surface-container-lowest\/90 { background-color: rgba(255, 255, 255, 0.95) !important; }
+.light-mode .bg-surface-container-low\/50 { background-color: rgba(248, 250, 252, 0.92) !important; }
+.light-mode .bg-surface-container\/60 { background-color: rgba(241, 245, 249, 0.92) !important; }
+.light-mode .border-surface-container-high\/60 { border-color: rgba(203, 213, 225, 0.9) !important; }
+.light-mode .border-surface-container-high\/40 { border-color: rgba(203, 213, 225, 0.75) !important; }
+.light-mode .border-surface-container-high\/30 { border-color: rgba(203, 213, 225, 0.6) !important; }
+.light-mode .border-surface-container-low\/50 { border-color: rgba(226, 232, 240, 0.95) !important; }
+.light-mode .hover\:bg-surface-container-low\/50:hover { background-color: rgba(226, 232, 240, 0.85) !important; }
+.light-mode .hover\:bg-surface-container-high:hover { background-color: #e2e8f0 !important; }
 
 /* Accessibility Focus-Visible Rings */
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible {
   outline: 2px solid #3b82f6 !important;
   outline-offset: 2px !important;
+}
+
+/* Keyboard focus: extended to links and role="button" controls, with a
+   high-contrast ring (sky-blue outline + white halo) that stays visible on the dark theme. */
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
+a[href]:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.85) !important;
 }
 
 /* Toast slide-in animation */

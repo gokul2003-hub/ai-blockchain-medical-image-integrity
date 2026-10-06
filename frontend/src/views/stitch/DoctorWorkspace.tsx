@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { apiService, fetchProtectedBlobUrl } from "../../services/api";
 import { wsService } from "../../services/websocket";
 import { MetricCard } from "../../components/stitch/MetricCard";
@@ -14,6 +14,38 @@ import { ConsentCard } from "../../components/stitch/ConsentCard";
 import { LoadingState, EmptyState, ErrorState } from "../../components/stitch/States";
 import { FileUploadZone } from "../../components/stitch/FileUploadZone";
 import IntegrityProof from "../IntegrityProof";
+import UploadImage from "../UploadImage";
+
+// ---------------------------------------------------------------------------
+// Display helpers for integrity-evidence values. These only format what the
+// backend returned — they never invent content. Absent values stay null and
+// render as "N/A" / "Not available".
+// ---------------------------------------------------------------------------
+
+/** First 16 chars … last 8 of a SHA-3 digest; null when the backend has none. */
+const shortHash = (value?: string | null): string | null => {
+  if (!value || typeof value !== "string") return null;
+  return value.length <= 26 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`;
+};
+
+/** Compact form of a transaction hash for ledger rows (first 10 … last 6). */
+const shortTx = (value?: string | null): string | null => {
+  if (!value || typeof value !== "string") return null;
+  return value.length <= 20 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
+};
+
+/** ISO timestamp → locale string; absent → "N/A"; unparsable → raw value. */
+const fmtTimestamp = (value?: string | null): string => {
+  if (!value) return "N/A";
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+};
+
+/** Forensic confidence values arrive as 0–1 ratios; render as a percentage. */
+const fmtConfidence = (value?: number | null): string => {
+  if (value === null || value === undefined || isNaN(value)) return "N/A";
+  return `${(value <= 1 ? value * 100 : value).toFixed(1)}%`;
+};
 
 interface DoctorWorkspaceProps {
   token: string;
@@ -36,6 +68,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
   const [selectedScan, setSelectedScan] = useState<any | null>(null);
   const [digitalTwin, setDigitalTwin] = useState<any | null>(null);
   const [integrityEvidence, setIntegrityEvidence] = useState<any | null>(null);
+  // Real risk/trust assessment for the selected study (backend-sourced, never derived client-side)
+  const [riskTrust, setRiskTrust] = useState<any | null>(null);
+  const [riskTrustLoading, setRiskTrustLoading] = useState<boolean>(false);
+  const [evidenceLoading, setEvidenceLoading] = useState<boolean>(false);
   const [recoveryRecords, setRecoveryRecords] = useState<any[]>([]);
   const [consents, setConsents] = useState<any[]>([]);
   const [blocks, setBlocks] = useState<any[]>([]);
@@ -103,7 +139,19 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
         // Derive display flags from the real quarantine_status DB field
         setImages(imgsData.value.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
         if (!selectedImageId && imgsData.value.length > 0) {
-          onSelectImage(imgsData.value[0].id);
+          // Auto-select the first scan whose stored object still exists so the
+          // default view renders actual images (stale rows 404 on preview).
+          (async () => {
+            for (const img of imgsData.value) {
+              try {
+                const probeUrl = await fetchProtectedBlobUrl(`/api/images/preview/${img.id}`);
+                URL.revokeObjectURL(probeUrl);
+                onSelectImage(img.id);
+                return;
+              } catch { /* missing object — try the next scan */ }
+            }
+            onSelectImage(imgsData.value[0].id);
+          })();
         }
       }
       if (analyticsData.status === "fulfilled") setAnalytics(analyticsData.value);
@@ -126,12 +174,27 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
     }
   };
 
+  // REFRESH AFTER UPLOAD: the moment the doctor leaves the upload view (either
+  // via the back link or UploadImage's "View all images"), re-run the existing
+  // loadData() fetch so the freshly registered study shows up in the worklist.
+  const prevSubPathRef = useRef(activeSubPath);
+  useEffect(() => {
+    const prevSubPath = prevSubPathRef.current;
+    prevSubPathRef.current = activeSubPath;
+    if (prevSubPath === "upload-image" && activeSubPath !== "upload-image") {
+      loadData();
+    }
+  }, [activeSubPath]);
+
   // Sync selected scan details
   useEffect(() => {
     if (!selectedImageId) {
       setSelectedScan(null);
       setDigitalTwin(null);
       setIntegrityEvidence(null);
+      setRiskTrust(null);
+      setRiskTrustLoading(false);
+      setEvidenceLoading(false);
       setPreRecoveryUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       setPostRecoveryUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
       setRecoverySuccess(null);
@@ -148,10 +211,37 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
       .then((twin) => setDigitalTwin(twin))
       .catch(() => setDigitalTwin(null));
 
+    // Real risk/trust assessment: dedicated endpoint first, integrity-evidence
+    // scores as the fallback source. Null/absent stays null (honest "no
+    // assessment" state) — no numbers are ever invented in the client.
+    let isRiskMounted = true;
+    setRiskTrust(null);
+    setIntegrityEvidence(null);
+    setRiskTrustLoading(true);
+    apiService
+      .getImageRiskTrust(selectedImageId)
+      .then((data) => {
+        if (isRiskMounted) setRiskTrust(data ?? null);
+      })
+      .catch(() => {
+        if (isRiskMounted) setRiskTrust(null);
+      })
+      .finally(() => {
+        if (isRiskMounted) setRiskTrustLoading(false);
+      });
+
+    setEvidenceLoading(true);
     apiService
       .getIntegrityEvidence(selectedImageId)
-      .then((evidence) => setIntegrityEvidence(evidence))
-      .catch(() => setIntegrityEvidence(null));
+      .then((evidence) => {
+        if (isRiskMounted) setIntegrityEvidence(evidence);
+      })
+      .catch(() => {
+        if (isRiskMounted) setIntegrityEvidence(null);
+      })
+      .finally(() => {
+        if (isRiskMounted) setEvidenceLoading(false);
+      });
 
     // Fetch authenticated pre-recovery preview
     let isMounted = true;
@@ -170,6 +260,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
     return () => {
       isMounted = false;
+      isRiskMounted = false;
     };
   }, [selectedImageId, images]);
 
@@ -221,7 +312,167 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
   const totalScans = images.length;
   const tamperedScansCount = images.filter((img) => img.is_tampered || img.tampered).length;
   const verifiedScansCount = Math.max(0, totalScans - tamperedScansCount);
+  // Same predicate the worklist filter uses, so the "Requires Check" chip badge matches its rows
+  const requiresCheckCount = images.filter(
+    (img) =>
+      img.requires_review ||
+      img.is_tampered ||
+      img.tampered ||
+      img.tamper_status === "TAMPERED"
+  ).length;
   const recoveryQueueCount = recoveryRecords.filter((r) => r.status !== "VERIFIED").length;
+
+  // Single source for the selected study's risk value (the value RiskScoreCard renders).
+  // Backend-sourced only: dedicated /risk-trust endpoint, falling back to the
+  // persisted/computed scores on the integrity-evidence bundle. null => no
+  // assessment on record, rendered as an honest absent state.
+  const riskAssessmentLoading = riskTrustLoading || evidenceLoading;
+  const selectedRiskScore: number | null =
+    riskTrust && riskTrust.risk_score !== null && riskTrust.risk_score !== undefined
+      ? riskTrust.risk_score
+      : integrityEvidence?.risk_score !== undefined && integrityEvidence?.risk_score !== null
+      ? integrityEvidence.risk_score
+      : null;
+  const selectedTrustScore: number | null =
+    riskTrust && riskTrust.trust_score !== null && riskTrust.trust_score !== undefined
+      ? riskTrust.trust_score
+      : integrityEvidence?.trust_score !== undefined && integrityEvidence?.trust_score !== null
+      ? integrityEvidence.trust_score
+      : null;
+  const selectedTamperConfidence: number | undefined =
+    integrityEvidence?.ai_confidence ??
+    integrityEvidence?.ai_forensics?.confidence_score ??
+    undefined;
+
+  // ------------------------------------------------------------------
+  // INTEGRITY EVIDENCE for the selected study — GET /api/images/{id}/integrity-evidence.
+  // Every value rendered below comes straight from that bundle (or the
+  // existing digitalTwin fetch); anything the backend omits stays an honest
+  // "N/A" / "Not available" — nothing is derived or invented client-side.
+  // ------------------------------------------------------------------
+  const evidence = integrityEvidence;
+  const evStatus: string | null = evidence?.verification_status ?? null;
+  const evHashMatch: boolean | null =
+    typeof evidence?.hash_match === "boolean" ? evidence.hash_match : null;
+  const isTamperedEvidence =
+    evHashMatch === false || evStatus === "TAMPERED" || evStatus === "QUARANTINED";
+  const isVerifiedEvidence =
+    !isTamperedEvidence &&
+    (evStatus === "VERIFIED" || evStatus === "RECOVERED" || evHashMatch === true);
+  const ditStatus: string | null =
+    digitalTwin?.verification_status ?? evidence?.dit_status ?? null;
+  const evTxHash: string | null = evidence?.blockchain_tx_hash ?? null;
+  const evBlockchainTxs: any[] = Array.isArray(evidence?.blockchain?.transactions)
+    ? evidence.blockchain.transactions
+    : [];
+  const evLatestTx: any | null =
+    evBlockchainTxs.length > 0 ? evBlockchainTxs[evBlockchainTxs.length - 1] : null;
+  const evAuditEvents: any[] = Array.isArray(evidence?.audit_events)
+    ? evidence.audit_events
+    : [];
+  const evLatestAudit: any | null = evAuditEvents.length > 0 ? evAuditEvents[0] : null;
+  const evAiStatus: string | null =
+    evidence?.ai_forensics?.status ?? evidence?.forensic_report_status ?? null;
+  const evAiConfidenceRaw =
+    evidence?.ai_confidence ?? evidence?.ai_forensics?.confidence_score;
+  const evAiConfidence: number | null =
+    typeof evAiConfidenceRaw === "number" ? evAiConfidenceRaw : null;
+  const evTamperPct: number | null =
+    typeof evidence?.tamper_percentage === "number" ? evidence.tamper_percentage : null;
+
+  // Headline verdict — honest mapping of the backend verification_status.
+  const integrityHeadline: { label: string; icon: string; className: string } = (() => {
+    const neutral =
+      "bg-surface-container text-on-surface-variant border-surface-container-high";
+    if (evidenceLoading)
+      return { label: "VERIFYING…", icon: "progress_activity", className: neutral };
+    if (!evidence)
+      return { label: "N/A — NOT AVAILABLE", icon: "help", className: neutral };
+    switch (evStatus) {
+      case "VERIFIED":
+        return {
+          label: "✓ VERIFIED",
+          icon: "verified",
+          className: "bg-secondary-fixed text-on-secondary-fixed border-secondary/40",
+        };
+      case "RECOVERED":
+        return {
+          label: "✓ RECOVERED",
+          icon: "restart_check",
+          className: "bg-secondary-fixed text-on-secondary-fixed border-secondary/40",
+        };
+      case "TAMPERED":
+        return {
+          label: "⚠ TAMPERED",
+          icon: "gpp_maybe",
+          className: "bg-error-container text-on-error-container border-error/50",
+        };
+      case "QUARANTINED":
+        return {
+          label: "⚠ QUARANTINED",
+          icon: "gpp_maybe",
+          className: "bg-error-container text-on-error-container border-error/50",
+        };
+      case "PENDING":
+        return {
+          label: "⚠ REVIEW REQUIRED",
+          icon: "rule",
+          className: "bg-amber-100 text-amber-900 border-amber-300",
+        };
+      default:
+        return { label: evStatus || "N/A", icon: "help", className: neutral };
+    }
+  })();
+
+  // Digital Integrity Twin lifecycle — only states backed by real data.
+  // Steps the backend has not reported yet stay dimmed as "pending".
+  const ditTimeline: { label: string; done: boolean; current: boolean }[] = [];
+  if (evidence) {
+    ditTimeline.push({
+      label: evidence.created_at
+        ? `Created · ${fmtTimestamp(evidence.created_at)}`
+        : "Created",
+      done: !!evidence.created_at,
+      current: false,
+    });
+    if (evStatus === "VERIFIED" || evStatus === "RECOVERED") {
+      ditTimeline.push({ label: "Verified", done: true, current: evStatus === "VERIFIED" });
+    } else if (evStatus === "TAMPERED") {
+      ditTimeline.push({ label: "Tampered", done: true, current: true });
+    } else if (evStatus === "QUARANTINED") {
+      ditTimeline.push({ label: "Quarantined", done: true, current: true });
+    }
+    if (evidence.recovery_status === "RECOVERED") {
+      ditTimeline.push({
+        label: "Recovered",
+        done: true,
+        current: evidence.post_recovery_verified !== true,
+      });
+    } else if (evidence.recovery_status === "FAILED") {
+      ditTimeline.push({ label: "Recovery failed", done: false, current: false });
+    } else if (isTamperedEvidence) {
+      ditTimeline.push({ label: "Recovered", done: false, current: false });
+    }
+    if (evidence.post_recovery_verified === true) {
+      ditTimeline.push({ label: "Recovery verified", done: true, current: true });
+    } else if (evidence.post_recovery_verified === false) {
+      ditTimeline.push({ label: "Recovery verification failed", done: false, current: false });
+    } else if (isTamperedEvidence) {
+      ditTimeline.push({ label: "Recovery verified", done: false, current: false });
+    }
+  }
+
+  // Verify action on worklist rows: select the study and anchor the inline
+  // integrity-evidence panel on the dashboard (the panel lives there).
+  const handleVerifyStudy = (id: number) => {
+    onSelectImage(id);
+    if (activeSubPath !== "doctor-dashboard") onNavigate("doctor-dashboard");
+    window.setTimeout(() => {
+      document
+        .getElementById("integrity-evidence-panel")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+  };
 
   // Self-recovery steps definition
   const recoverySteps: StepItem[] = [
@@ -256,6 +507,33 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
       status: recoverySuccess ? "complete" : "upcoming",
     },
   ];
+
+  // ------------------------------------------------------------------
+  // SUB-VIEW: secure upload. Reuses the existing UploadImage component
+  // (the same screen the legacy router renders for "upload-image").
+  // ------------------------------------------------------------------
+  if (activeSubPath === "upload-image") {
+    return (
+      <div className="space-y-4">
+        <button
+          type="button"
+          onClick={() => onNavigate("doctor-dashboard")}
+          className="self-start inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-md text-xs font-medium shadow-sm hover:bg-surface-container-high transition-colors"
+        >
+          <span className="material-symbols-outlined text-sm" aria-hidden="true">arrow_back</span>
+          <span>Back to worklist</span>
+        </button>
+        <UploadImage
+          token={token}
+          onViewChange={(view) =>
+            // UploadImage's receipt links to legacy "medical-images", which has
+            // no stitch branch for doctors — land on the real worklist instead.
+            onNavigate(view === "medical-images" ? "doctor-dashboard" : view)
+          }
+        />
+      </div>
+    );
+  }
 
   if (loading && images.length === 0) {
     return <LoadingState message="Loading Doctor / Radiologist telemetry suite..." />;
@@ -316,56 +594,74 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
             <div className="flex items-center flex-wrap gap-1.5 bg-surface-container-low p-1 rounded-xl shadow-sm border border-surface-container-high/40">
               <button
                 onClick={() => setFilterType("all")}
-                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 ${
+                aria-pressed={filterType === "all"}
+                title="Every study assigned to this worklist"
+                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 border ${
                   filterType === "all"
-                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
+                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm ring-1 ring-primary/60 border-primary/40"
+                    : "border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
                 }`}
               >
                 <span>All Assigned</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-surface-container text-on-surface font-code-sm text-[10px]">
+                <span className={`px-1.5 py-0.5 rounded-full font-code-sm text-[10px] ${filterType === "all" ? "bg-primary/15 text-primary" : "bg-surface-container text-on-surface"}`}>
                   {totalScans}
                 </span>
               </button>
               <button
                 onClick={() => setFilterType("requires_check")}
-                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 ${
+                aria-pressed={filterType === "requires_check"}
+                title="Studies still awaiting a second-look review"
+                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 border ${
                   filterType === "requires_check"
-                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
+                    ? "bg-surface-container-lowest text-primary font-semibold shadow-sm ring-1 ring-primary/60 border-primary/40"
+                    : "border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
                 }`}
               >
                 <span>Requires Check</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-surface-container text-on-surface-variant font-code-sm text-[10px]">
-                  {tamperedScansCount}
+                <span className={`px-1.5 py-0.5 rounded-full font-code-sm text-[10px] ${filterType === "requires_check" ? "bg-primary/15 text-primary" : "bg-surface-container text-on-surface-variant"}`}>
+                  {requiresCheckCount}
                 </span>
               </button>
               <button
                 onClick={() => setFilterType("tampered")}
-                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 ${
+                aria-pressed={filterType === "tampered"}
+                title="Quarantined studies with detected hash deviation"
+                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 border ${
                   filterType === "tampered"
-                    ? "bg-error-container text-on-error-container font-semibold shadow-sm"
-                    : "text-error hover:bg-error-container/40"
+                    ? "bg-error-container text-on-error-container font-semibold shadow-sm ring-1 ring-error/70 border-error/50"
+                    : "border-transparent text-error hover:bg-error-container/40"
                 }`}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-error animate-pulse" />
                 <span>Suspected Tampering</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-error-container text-on-error-container font-code-sm text-[10px] font-semibold">
+                <span className={`px-1.5 py-0.5 rounded-full font-code-sm text-[10px] font-semibold ${filterType === "tampered" ? "bg-error text-on-error" : "bg-error-container text-on-error-container"}`}>
                   {tamperedScansCount}
                 </span>
               </button>
               <button
                 onClick={() => setFilterType("verified")}
-                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 ${
+                aria-pressed={filterType === "verified"}
+                title="Cleared studies ready for radiologist sign-off"
+                className={`px-3 py-1.5 rounded-lg font-label-md text-xs transition-all flex items-center gap-1.5 border ${
                   filterType === "verified"
-                    ? "bg-surface-container-lowest text-secondary font-semibold shadow-sm"
-                    : "text-on-surface-variant hover:text-on-surface"
+                    ? "bg-surface-container-lowest text-secondary font-semibold shadow-sm ring-1 ring-secondary/60 border-secondary/40"
+                    : "border-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
                 }`}
               >
                 <span>Ready for Sign-off</span>
-                <span className="px-1.5 py-0.2 rounded-full bg-secondary-fixed text-on-secondary-fixed font-code-sm text-[10px]">
+                <span className={`px-1.5 py-0.5 rounded-full font-code-sm text-[10px] ${filterType === "verified" ? "bg-secondary/15 text-secondary" : "bg-secondary-fixed text-on-secondary-fixed"}`}>
                   {verifiedScansCount}
                 </span>
+              </button>
+              {/* Primary action: register a new study (routes to the existing upload view) */}
+              <button
+                type="button"
+                onClick={() => onNavigate("upload-image")}
+                title="Register a new medical image study"
+                className="px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:bg-primary-container transition-colors"
+              >
+                <span className="material-symbols-outlined text-sm" aria-hidden="true">upload</span>
+                <span>Upload Medical Image</span>
               </button>
             </div>
           </div>
@@ -382,7 +678,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
             />
             <MetricCard
               title="Integrity Status"
-              value={totalScans > 0 ? `${((verifiedScansCount / totalScans) * 100).toFixed(1)}%` : "100%"}
+              value={totalScans > 0 ? `${((verifiedScansCount / totalScans) * 100).toFixed(1)}%` : "—"}
               unit="SHA-3 Match"
               icon="verified_user"
               iconBgClass="bg-secondary-container/40 text-secondary"
@@ -448,7 +744,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                   <table className="w-full text-left font-body-sm text-xs">
                     <thead className="bg-surface-container-low text-on-surface-variant font-label-sm uppercase tracking-wider text-[11px]">
                       <tr>
-                        <th className="py-2.5 px-3">Study / Modality</th>
+                        <th className="py-2.5 px-3 border-l-2 border-l-transparent">Study / Modality</th>
                         <th className="py-2.5 px-3">Patient Ref</th>
                         <th className="py-2.5 px-3">Integrity State</th>
                         <th className="py-2.5 px-3">Cryptographic Match</th>
@@ -457,7 +753,11 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                     </thead>
                     <tbody className="divide-y divide-surface-container-low">
                       {filteredImages.map((img) => {
-                        const isTampered = img.is_tampered || img.tampered;
+                        // Same tamper predicate the quick filters use (derived from quarantine_status)
+                        const isTampered =
+                          img.is_tampered ||
+                          img.tampered ||
+                          img.tamper_status === "TAMPERED";
                         const isSelected = img.id === selectedImageId;
                         return (
                           <tr
@@ -465,11 +765,19 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                             onClick={() => onSelectImage(img.id)}
                             className={`cursor-pointer transition-colors ${
                               isSelected
-                                ? "bg-surface-container/70"
+                                ? isTampered
+                                  ? "bg-error-container/30"
+                                  : "bg-surface-container/70"
+                                : isTampered
+                                ? "bg-error-container/20 hover:bg-error-container/35"
                                 : "hover:bg-surface-container-low/50"
                             }`}
                           >
-                            <td className="py-2.5 px-3">
+                            <td
+                              className={`py-3 px-3 ${
+                                isTampered ? "border-l-2 border-l-error" : "border-l-2 border-l-transparent"
+                              }`}
+                            >
                               <div className="flex items-center gap-2">
                                 <div className="w-7 h-7 rounded bg-surface-container flex items-center justify-center text-primary shrink-0">
                                   <span className="material-symbols-outlined text-sm">
@@ -486,41 +794,86 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                                 </div>
                               </div>
                             </td>
-                            <td className="py-2.5 px-3 text-on-surface-variant font-code-sm">
+                            <td className="py-3 px-3 text-on-surface-variant font-code-sm">
                               Patient #{img.patient_id || "Anonymous"}
                             </td>
-                            <td className="py-2.5 px-3">
-                              <StatusPill
-                                variant={isTampered ? "tampered" : "verified"}
-                                label={isTampered ? "Tamper Detected" : "SHA-3 Valid"}
-                                pulse={isTampered}
-                              />
+                            <td className="py-3 px-3">
+                              <div className="flex flex-col items-start gap-1">
+                                <StatusPill
+                                  variant={isTampered ? "tampered" : "verified"}
+                                  label={isTampered ? "Tamper Detected" : "SHA-3 Valid"}
+                                  pulse={isTampered}
+                                  className={
+                                    isTampered
+                                      ? "ring-1 ring-error/50"
+                                      : "ring-1 ring-secondary/40"
+                                  }
+                                />
+                                <span
+                                  className={`px-1.5 py-0.5 rounded font-label-sm text-[10px] font-semibold tracking-wide ${
+                                    isTampered
+                                      ? "bg-error-container text-on-error-container"
+                                      : "bg-surface-container text-on-surface-variant"
+                                  }`}
+                                >
+                                  {isTampered ? "Critical Risk" : "Minimal Risk"}
+                                </span>
+                              </div>
                             </td>
-                            <td className="py-2.5 px-3 font-mono text-[10px] text-on-surface-variant max-w-[140px] truncate" title={img.hash}>
+                            <td className="py-3 px-3 font-mono text-[10px] text-on-surface-variant max-w-[140px] truncate" title={img.hash}>
                               {img.hash ? `${img.hash.slice(0, 10)}...${img.hash.slice(-6)}` : "Verified"}
                             </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <div className="flex items-center justify-end gap-1">
+                            <td className="py-3 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                {/* View → existing DICOM preview / viewer action */}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onSelectImage(img.id);
                                     onNavigate("image-review-and-verification");
                                   }}
-                                  className="px-2 py-1 rounded bg-primary text-on-primary font-label-sm text-[11px] hover:bg-primary-container shadow-sm"
+                                  className="px-2.5 py-1.5 rounded border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-sm text-[11px] font-medium"
                                 >
-                                  Review
+                                  View
                                 </button>
+                                {/* Verify → select the study and anchor the integrity-evidence panel */}
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleVerifyStudy(img.id);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded border border-secondary/50 text-secondary hover:bg-secondary-container/40 font-label-sm text-[11px] font-semibold"
+                                >
+                                  Verify
+                                </button>
+                                {/* Analyze → existing AI forensic studio (also the tampered-row escalation CTA) */}
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     onSelectImage(img.id);
                                     onNavigate("ai-tamper-forensics");
                                   }}
-                                  className="px-2 py-1 rounded bg-surface-container text-tertiary font-label-sm text-[11px] hover:bg-surface-container-high"
+                                  className={`px-2.5 py-1.5 rounded font-label-sm text-[11px] font-semibold shadow-sm ${
+                                    isTampered
+                                      ? "bg-primary text-on-primary hover:bg-primary-container"
+                                      : "border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+                                  }`}
                                 >
-                                  Forensics
+                                  Analyze
                                 </button>
+                                {/* Cleared state: sign-off remains an available row action */}
+                                {!isTampered && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onSelectImage(img.id);
+                                      alert(`Radiological sign-off recorded for Image #${img.id} with certified SHA-3 provenance signature.`);
+                                    }}
+                                    className="px-2.5 py-1.5 rounded bg-primary text-on-primary font-label-sm text-[11px] font-semibold hover:bg-primary-container shadow-sm"
+                                  >
+                                    Sign off
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -554,11 +907,477 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                     </span>
                   </div>
 
+                  {/* ── INTEGRITY STATUS PANEL (GET /api/images/{id}/integrity-evidence) ── */}
+                  <div
+                    id="integrity-evidence-panel"
+                    className="rounded-xl border border-surface-container-high/60 bg-surface-container-low p-3 space-y-2 scroll-mt-24"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-label-sm text-[10px] uppercase tracking-wider text-outline font-semibold">
+                        Integrity Status
+                      </span>
+                      <span className="font-code-sm text-[10px] text-on-surface-variant">
+                        {evidence?.hash_algorithm || "N/A"}
+                      </span>
+                    </div>
+
+                    {/* Headline verdict */}
+                    <div
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 ${integrityHeadline.className}`}
+                    >
+                      <span
+                        className="material-symbols-outlined text-lg"
+                        aria-hidden="true"
+                      >
+                        {integrityHeadline.icon}
+                      </span>
+                      <span className="font-headline-sm text-sm font-bold tracking-wide">
+                        {integrityHeadline.label}
+                      </span>
+                    </div>
+
+                    {evidenceLoading ? (
+                      <p className="font-body-sm text-xs text-on-surface-variant flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm animate-spin">
+                          progress_activity
+                        </span>
+                        <span>Loading integrity evidence…</span>
+                      </p>
+                    ) : !evidence ? (
+                      <p className="font-body-sm text-xs text-on-surface-variant">
+                        N/A — integrity evidence not available for this study.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5 font-body-sm text-[11px]">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-on-surface-variant shrink-0">Trusted SHA-3</span>
+                          <code
+                            className="font-mono text-[10px] text-on-surface truncate"
+                            title={evidence.trusted_hash || ""}
+                          >
+                            {shortHash(evidence.trusted_hash) || "Not available"}
+                          </code>
+                        </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-on-surface-variant shrink-0">Current SHA-3</span>
+                          <code
+                            className="font-mono text-[10px] text-on-surface truncate"
+                            title={evidence.current_hash || ""}
+                          >
+                            {shortHash(evidence.current_hash) || "Not available"}
+                          </code>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-on-surface-variant">Hash Match</span>
+                          <span
+                            className={`font-label-md text-[11px] font-bold ${
+                              evHashMatch === true
+                                ? "text-secondary"
+                                : evHashMatch === false
+                                ? "text-error"
+                                : "text-on-surface-variant"
+                            }`}
+                          >
+                            {evHashMatch === true
+                              ? "✓ MATCH"
+                              : evHashMatch === false
+                              ? "✕ MISMATCH"
+                              : "N/A"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-on-surface-variant">Digital Integrity Twin</span>
+                          <span
+                            className={`font-code-sm text-[10px] font-semibold ${
+                              ditStatus ? "text-secondary" : "text-on-surface-variant"
+                            }`}
+                          >
+                            {ditStatus || "Not available"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-on-surface-variant">Verification</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {fmtTimestamp(evidence.verification_timestamp)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-on-surface-variant">Image / Study ID</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {evidence.image_id !== null && evidence.image_id !== undefined
+                              ? `IMG-#${evidence.image_id}`
+                              : "N/A"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── TAMPER PROOF EVIDENCE (only when the evidence says tampered) ── */}
+                  {evidence && isTamperedEvidence && (
+                    <div className="rounded-xl border border-error/40 bg-error-container/30 p-3 space-y-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-label-sm text-[10px] uppercase tracking-wider text-error font-bold flex items-center gap-1">
+                          <span className="material-symbols-outlined text-sm" aria-hidden="true">
+                            crisis_alert
+                          </span>
+                          Tamper Proof Evidence
+                        </span>
+                        <StatusPill
+                          variant="tampered"
+                          label="Tampering Detected"
+                          className="ring-1 ring-error/50"
+                        />
+                      </div>
+
+                      {/* A · Cryptographic evidence */}
+                      <div className="rounded-lg border border-surface-container-high/60 bg-surface-container-lowest p-2.5 space-y-1">
+                        <span className="font-label-sm text-[10px] uppercase tracking-wider text-error font-semibold block">
+                          A · Cryptographic
+                        </span>
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant shrink-0">Trusted SHA-3</span>
+                          <code
+                            className="font-mono text-[10px] text-on-surface truncate"
+                            title={evidence.trusted_hash || ""}
+                          >
+                            {shortHash(evidence.trusted_hash) || "Not available"}
+                          </code>
+                        </div>
+                        <div className="flex items-start justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant shrink-0">Current SHA-3</span>
+                          <code
+                            className="font-mono text-[10px] text-on-surface truncate"
+                            title={evidence.current_hash || ""}
+                          >
+                            {shortHash(evidence.current_hash) || "Not available"}
+                          </code>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">Comparison</span>
+                          <span
+                            className={`font-label-md text-[11px] font-bold ${
+                              evHashMatch === false ? "text-error" : "text-on-surface-variant"
+                            }`}
+                          >
+                            {evHashMatch === true
+                              ? "✓ MATCH"
+                              : evHashMatch === false
+                              ? "✕ MISMATCH"
+                              : "N/A"}
+                          </span>
+                        </div>
+                        <p className="font-label-md text-[11px] font-bold text-error pt-1">
+                          TAMPERING DETECTED
+                        </p>
+                        <p className="font-body-sm text-[10px] text-on-surface-variant">
+                          {evidence.current_hash
+                            ? "Trusted and current SHA-3 digests do not match."
+                            : "Current SHA-3 could not be recomputed from the stored file."}
+                        </p>
+                      </div>
+
+                      {/* B · AI forensic analysis */}
+                      <div className="rounded-lg border border-surface-container-high/60 bg-surface-container-lowest p-2.5 space-y-1.5">
+                        <span className="font-label-sm text-[10px] uppercase tracking-wider text-error font-semibold block">
+                          B · AI Forensic
+                        </span>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">Detection status</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {evAiStatus || "Not available"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">Tamper probability</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {evTamperPct !== null ? `${evTamperPct.toFixed(1)}%` : "N/A"}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">AI confidence</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {fmtConfidence(evAiConfidence)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">Risk score</span>
+                          <span className="font-code-sm text-[10px] text-on-surface">
+                            {typeof evidence.risk_score === "number"
+                              ? `${evidence.risk_score}/100${
+                                  // Prefer the breakdown's own category: the serializer's
+                                  // top-level risk_category can disagree with its breakdown
+                                  (evidence.risk_and_trust as any)?.risk_breakdown?.risk?.category ||
+                                  evidence.risk_and_trust?.risk_category
+                                    ? ` · ${
+                                        (evidence.risk_and_trust as any)?.risk_breakdown?.risk
+                                          ?.category ||
+                                        evidence.risk_and_trust?.risk_category
+                                      }`
+                                    : ""
+                                }`
+                              : "N/A"}
+                          </span>
+                        </div>
+                        {/* Forensic artifact views live in the existing AI forensic studio */}
+                        <div className="flex flex-wrap gap-1.5 pt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onNavigate("ai-tamper-forensics")}
+                            className="px-2 py-1 rounded bg-primary text-on-primary font-label-sm text-[10px] font-semibold hover:bg-primary-container shadow-sm"
+                          >
+                            View Tamper Heatmap
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onNavigate("ai-tamper-forensics")}
+                            className="px-2 py-1 rounded border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-sm text-[10px] font-medium"
+                          >
+                            View Localization Mask
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onNavigate("ai-tamper-forensics")}
+                            className="px-2 py-1 rounded border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high font-label-sm text-[10px] font-medium"
+                          >
+                            View Grad-CAM
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* C · Digital integrity twin lifecycle */}
+                      <div className="rounded-lg border border-surface-container-high/60 bg-surface-container-lowest p-2.5 space-y-1.5">
+                        <span className="font-label-sm text-[10px] uppercase tracking-wider text-error font-semibold block">
+                          C · Digital Integrity Twin
+                        </span>
+                        <div className="flex items-center justify-between gap-2 text-[11px]">
+                          <span className="text-on-surface-variant">Current state</span>
+                          <span
+                            className={`font-code-sm text-[10px] font-semibold ${
+                              ditStatus ? "text-error" : "text-on-surface-variant"
+                            }`}
+                          >
+                            {ditStatus || "Not available"}
+                          </span>
+                        </div>
+                        <ol className="space-y-1 pt-0.5">
+                          {ditTimeline.map((step, idx) => (
+                            <li key={idx} className="flex items-center gap-1.5 text-[10px]">
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                  step.done
+                                    ? step.current
+                                      ? "bg-primary animate-pulse"
+                                      : "bg-secondary"
+                                    : "bg-outline-variant/60"
+                                }`}
+                                aria-hidden="true"
+                              />
+                              <span
+                                className={
+                                  step.done
+                                    ? step.current
+                                      ? "text-on-surface font-semibold"
+                                      : "text-on-surface-variant"
+                                    : "text-outline"
+                                }
+                              >
+                                {step.label}
+                              </span>
+                              {!step.done && (
+                                <span className="text-outline italic">pending</span>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                        <div className="flex items-center justify-between gap-2 text-[11px] pt-1 border-t border-surface-container-high/60">
+                          <span className="text-on-surface-variant">Post-recovery hash</span>
+                          <code
+                            className="font-mono text-[10px] text-on-surface truncate"
+                            title={evidence.post_recovery_hash || ""}
+                          >
+                            {shortHash(evidence.post_recovery_hash) || "Not available"}
+                          </code>
+                        </div>
+                      </div>
+
+                      {/* D · Blockchain / audit record (real tx only, else honest absent state) */}
+                      <div className="rounded-lg border border-surface-container-high/60 bg-surface-container-lowest p-2.5 space-y-1">
+                        <span className="font-label-sm text-[10px] uppercase tracking-wider text-error font-semibold block">
+                          D · Blockchain / Audit
+                        </span>
+                        {evTxHash ? (
+                          <>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant">Ledger record</span>
+                              <span className="text-secondary font-bold">✓ RECORDED</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant">Network</span>
+                              <span className="font-code-sm text-[10px] text-on-surface">
+                                {evidence.blockchain_network || "Not available"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant">Block</span>
+                              <span className="font-code-sm text-[10px] text-on-surface">
+                                {evidence.blockchain_block !== null &&
+                                evidence.blockchain_block !== undefined
+                                  ? `#${evidence.blockchain_block}`
+                                  : "N/A"}
+                              </span>
+                            </div>
+                            <div className="flex items-start justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant shrink-0">Tx hash</span>
+                              <code
+                                className="font-mono text-[10px] text-on-surface truncate"
+                                title={evTxHash}
+                              >
+                                {shortTx(evTxHash)}
+                              </code>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant">Event</span>
+                              <span className="font-code-sm text-[10px] text-on-surface">
+                                {evLatestTx?.record_type || "N/A"}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="text-on-surface-variant">Timestamp</span>
+                              <span className="font-code-sm text-[10px] text-on-surface">
+                                {fmtTimestamp(evidence.blockchain_timestamp)}
+                              </span>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="text-on-surface-variant">Ledger record</span>
+                            <span className="text-on-surface-variant font-semibold">
+                              Not available
+                            </span>
+                          </div>
+                        )}
+                        {evLatestAudit ? (
+                          <div className="flex items-start justify-between gap-2 text-[11px] pt-1 border-t border-surface-container-high/60">
+                            <span className="text-on-surface-variant shrink-0">Latest audit</span>
+                            <span className="text-right text-[10px] text-on-surface">
+                              {evLatestAudit.action || "N/A"}
+                              <span className="block text-on-surface-variant font-code-sm">
+                                {evLatestAudit.actor_username ||
+                                  (evLatestAudit.actor_user_id
+                                    ? `user #${evLatestAudit.actor_user_id}`
+                                    : "actor N/A")}
+                                {" · "}
+                                {fmtTimestamp(evLatestAudit.timestamp)}
+                              </span>
+                            </span>
+                          </div>
+                        ) : (
+                          !evTxHash && (
+                            <p className="font-body-sm text-[10px] text-on-surface-variant pt-1">
+                              No ledger transaction or audit event recorded for this study.
+                            </p>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── VERIFIED IMAGE CARD (only when the evidence says intact) ── */}
+                  {evidence && isVerifiedEvidence && (
+                    <div className="rounded-xl border border-secondary/40 bg-secondary-fixed/50 p-3 space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="material-symbols-outlined text-base text-secondary"
+                          aria-hidden="true"
+                        >
+                          verified
+                        </span>
+                        <span className="font-headline-sm text-xs font-bold text-on-surface">
+                          ✓ IMAGE INTEGRITY VERIFIED
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-on-surface-variant">SHA-3</span>
+                        <span className="font-label-md text-[11px] font-bold text-secondary">
+                          {evHashMatch === true ? "✓ MATCH" : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-on-surface-variant">Digital Integrity Twin</span>
+                        <span className="font-label-md text-[11px] font-bold text-secondary">
+                          {ditStatus ? `✓ ${ditStatus}` : "Not available"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-on-surface-variant">Blockchain / Audit</span>
+                        <span
+                          className={`font-label-md text-[11px] font-bold ${
+                            evTxHash ? "text-secondary" : "text-on-surface-variant"
+                          }`}
+                        >
+                          {evTxHash ? "✓ RECORDED" : "N/A"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span className="text-on-surface-variant">AI forensics</span>
+                        <span className="text-on-surface">
+                          {evidence.forensic_report_id
+                            ? evidence.forensic_report_status || "Report on record"
+                            : "Not triggered"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   <RiskScoreCard
-                    score={selectedScan.is_tampered ? 88 : 12}
+                    score={selectedRiskScore}
                     anomalyDetected={selectedScan.is_tampered}
-                    tamperConfidence={selectedScan.is_tampered ? 0.94 : 0.05}
+                    tamperConfidence={selectedTamperConfidence}
+                    riskLevel={
+                      selectedRiskScore === null
+                        ? riskAssessmentLoading
+                          ? "ASSESSING…"
+                          : "NO ASSESSMENT"
+                        : undefined
+                    }
                   />
+
+                  {/* Risk rationale + contextual escalation (reuses the forensic studio route) */}
+                  <div
+                    className={`rounded-lg border px-3 py-2.5 space-y-2 ${
+                      selectedScan.is_tampered
+                        ? "bg-error-container/60 border-error/40"
+                        : "bg-surface-container-low border-surface-container-high/60"
+                    }`}
+                  >
+                    <p
+                      className={`font-label-md text-[11px] leading-4 ${
+                        selectedScan.is_tampered ? "text-on-error-container" : "text-secondary"
+                      }`}
+                    >
+                      {riskAssessmentLoading
+                        ? "Loading tamper risk assessment from the forensic service…"
+                        : selectedRiskScore === null
+                        ? "No risk assessment yet for this study — run a forensic analysis to generate one."
+                        : selectedScan.is_tampered
+                        ? `Critical: Tampering likelihood ${Math.round(selectedRiskScore)}/100 — escalate for forensic review.`
+                        : `Stable: Tampering likelihood ${Math.round(selectedRiskScore)}/100 — integrity threshold passed.`}
+                    </p>
+                    <button
+                      onClick={() => onNavigate("ai-tamper-forensics")}
+                      className={`w-full py-2 px-3 rounded-lg font-label-md text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm ${
+                        selectedScan.is_tampered
+                          ? "bg-primary text-on-primary hover:bg-primary-container"
+                          : "border border-surface-container-high text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-sm">biotech</span>
+                      <span>
+                        {selectedScan.is_tampered ? "Escalate to Forensics" : "Open Forensic Report"}
+                      </span>
+                    </button>
+                  </div>
 
                   {/* Digital Twin Status */}
                   <div className="bg-surface-container-low p-3 rounded-xl border border-surface-container-high/40 space-y-2 text-xs">
@@ -590,7 +1409,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                       onClick={() => onNavigate("image-review-and-verification")}
                       className="px-3 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-xs flex items-center justify-center gap-1.5 transition-colors"
                     >
-                      <span className="material-symbols-outlined text-sm">fact_check</span>
+                      <span className="material-symbols-outlined text-sm" data-icon="fact_check" aria-hidden="true" />
                       <span>DICOM Review</span>
                     </button>
                     <button
@@ -610,7 +1429,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                 />
               )}
 
-              <TrustScoreCard score={96} />
+              <TrustScoreCard score={selectedTrustScore} />
             </div>
           </div>
         </div>
@@ -686,9 +1505,16 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
               />
 
               <RiskScoreCard
-                score={integrityEvidence?.risk_score !== undefined && integrityEvidence?.risk_score !== null ? integrityEvidence.risk_score : (selectedScan?.is_tampered ? 85 : 10)}
+                score={selectedRiskScore}
                 anomalyDetected={selectedScan?.is_tampered}
-                tamperConfidence={integrityEvidence?.ai_confidence ?? (integrityEvidence?.ai_forensics?.confidence_score ?? undefined)}
+                tamperConfidence={selectedTamperConfidence}
+                riskLevel={
+                  selectedRiskScore === null
+                    ? riskAssessmentLoading
+                      ? "ASSESSING…"
+                      : "NO ASSESSMENT"
+                    : undefined
+                }
               />
 
               {/* Clinical Verification Actions */}
@@ -699,7 +1525,11 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
                 <button
                   onClick={() => alert(`Radiological sign-off recorded for Image #${selectedImageId} with certified SHA-3 provenance signature.`)}
-                  className="w-full py-2.5 px-4 rounded-lg bg-secondary text-on-secondary font-headline-sm text-xs font-semibold hover:bg-on-secondary-container transition-colors shadow-sm flex items-center justify-center gap-2"
+                  className={`w-full py-2.5 px-4 rounded-lg font-headline-sm text-xs font-semibold transition-colors shadow-sm flex items-center justify-center gap-2 ${
+                    selectedScan?.is_tampered
+                      ? "border border-surface-container-high bg-transparent text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+                      : "bg-secondary text-on-secondary hover:bg-on-secondary-container"
+                  }`}
                 >
                   <span className="material-symbols-outlined text-sm">verified</span>
                   <span>Sign &amp; Verify Image Authenticity</span>
@@ -709,7 +1539,11 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                   onClick={() => {
                     alert(`Flagged Image #${selectedImageId} as suspect! Initiating hospital quarantine and dispatching neural tamper report.`);
                   }}
-                  className="w-full py-2 px-4 rounded-lg bg-surface-container text-error hover:bg-error-container/30 font-label-md text-xs transition-colors flex items-center justify-center gap-2"
+                  className={`w-full py-2 px-4 rounded-lg font-label-md text-xs transition-colors flex items-center justify-center gap-2 ${
+                    selectedScan?.is_tampered
+                      ? "bg-error text-on-error font-semibold shadow-sm hover:opacity-90"
+                      : "bg-surface-container text-error hover:bg-error-container/30"
+                  }`}
                 >
                   <span className="material-symbols-outlined text-sm">flag</span>
                   <span>Flag Suspicious Pixel Alteration</span>
@@ -771,16 +1605,23 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <RiskScoreCard
-              score={integrityEvidence?.risk_score !== undefined && integrityEvidence?.risk_score !== null ? integrityEvidence.risk_score : (selectedScan?.is_tampered ? 85 : 10)}
+              score={selectedRiskScore}
               anomalyDetected={selectedScan?.is_tampered}
-              tamperConfidence={integrityEvidence?.ai_confidence ?? (integrityEvidence?.ai_forensics?.confidence_score ?? undefined)}
+              tamperConfidence={selectedTamperConfidence}
+              riskLevel={
+                selectedRiskScore === null
+                  ? riskAssessmentLoading
+                    ? "ASSESSING…"
+                    : "NO ASSESSMENT"
+                  : undefined
+              }
             />
             <HashComparisonCard
               genesisHash={integrityEvidence?.trusted_hash || selectedScan?.hash}
               currentHash={integrityEvidence?.current_hash || selectedScan?.hash}
               isMatch={integrityEvidence?.hash_match !== undefined ? integrityEvidence.hash_match : !selectedScan?.is_tampered}
             />
-            <TrustScoreCard score={integrityEvidence?.trust_score !== undefined && integrityEvidence?.trust_score !== null ? integrityEvidence.trust_score : (selectedScan?.is_tampered ? 15 : 95)} />
+            <TrustScoreCard score={selectedTrustScore} />
           </div>
         </div>
       )}

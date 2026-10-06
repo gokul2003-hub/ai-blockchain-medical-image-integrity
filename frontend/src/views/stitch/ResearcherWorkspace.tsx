@@ -106,15 +106,25 @@ export const ResearcherWorkspace: React.FC<ResearcherWorkspaceProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Primary research-data action — honestly labelled.
+            Backend gap: there is NO researcher file-upload endpoint.
+            /api/images/upload and /api/images/upload-dicom are gated by
+            RoleChecker(["super_admin","doctor","radiologist"]) and must stay
+            blocked for researchers. The only supported researcher data-ingestion
+            action is POST /api/analytics/research-simulation (plus read-only
+            GET benchmark endpoints) — do NOT add clinical upload UI here. */}
+        <div className="flex flex-col items-start md:items-end gap-1.5">
           <button
             onClick={handleRunSimulation}
             disabled={simLoading}
             className="px-4 py-2 rounded-lg bg-tertiary text-on-tertiary font-label-md text-xs hover:bg-tertiary-container shadow-sm flex items-center gap-1.5 disabled:opacity-50"
           >
             <span className="material-symbols-outlined text-sm animate-spin-slow">hub</span>
-            <span>{simLoading ? "Running Simulation..." : "Run Federated Aggregation"}</span>
+            <span>{simLoading ? "Running Analysis..." : "Run Approved Research Analysis"}</span>
           </button>
+          <p className="font-body-sm text-[10px] leading-snug text-on-surface-variant max-w-[300px] md:text-right">
+            De-identified research data only — clinical image upload is restricted to clinical staff.
+          </p>
         </div>
       </div>
 

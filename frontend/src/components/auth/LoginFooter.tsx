@@ -1,7 +1,19 @@
-import React, { useState } from "react";
-import { Shield, ExternalLink, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { Shield, X } from "lucide-react";
+import { API_BASE_URL } from "../../services/api";
 
 export const LoginFooter: React.FC = () => {
+  // Real backend liveness — never a hardcoded status badge
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/health`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => { if (active) setApiOnline(d?.status === "ok"); })
+      .catch(() => { if (active) setApiOnline(false); });
+    return () => { active = false; };
+  }, []);
+
   const [modalContent, setModalContent] = useState<{
     open: boolean;
     title: string;
@@ -33,7 +45,19 @@ export const LoginFooter: React.FC = () => {
 
   return (
     <>
-      <footer className="w-full bg-[#050b18] border-t border-cyan-500/15 py-4 px-4 sm:px-6 lg:px-8 text-xs text-slate-400">
+      <footer className="w-full bg-[#050b18] border-t border-cyan-500/15 py-3 px-4 sm:px-6 lg:px-8 text-xs text-slate-400">
+
+        {/* Trust line — factual, verified project capabilities (no certification badges) */}
+        <p className="max-w-7xl mx-auto mb-2 text-center text-[11px] leading-4 text-slate-500">
+          AI-based tamper analysis
+          <span className="px-1.5 text-cyan-500/50">•</span>
+          Blockchain audit trail
+          <span className="px-1.5 text-cyan-500/50">•</span>
+          SHA-3 integrity verification
+          <span className="px-1.5 text-cyan-500/50">•</span>
+          Role-based access
+        </p>
+
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           
           {/* Brand & Copyright */}
@@ -67,9 +91,23 @@ export const LoginFooter: React.FC = () => {
 
           {/* System Status & Version */}
           <div className="flex items-center gap-3 text-[11px] font-mono">
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>System Online</span>
+            <div
+              className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                apiOnline === null
+                  ? "bg-slate-500/10 border-slate-500/20 text-slate-400"
+                  : apiOnline
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                    : "bg-red-500/10 border-red-500/20 text-red-400"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  apiOnline === null ? "bg-slate-400" : apiOnline ? "bg-emerald-400" : "bg-red-400"
+                } ${apiOnline === null ? "" : "animate-pulse"}`}
+              />
+              <span>
+                {apiOnline === null ? "Checking API…" : apiOnline ? "API Online" : "API Offline"}
+              </span>
             </div>
             <span className="text-slate-500">v1.0.0</span>
           </div>

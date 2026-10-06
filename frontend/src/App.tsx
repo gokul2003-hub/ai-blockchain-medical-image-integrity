@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { ShieldCheck, Users, Upload, RefreshCw, FileCode2, Settings, Building2, Server } from "lucide-react";
 
@@ -54,6 +54,10 @@ export default function App() {
   // Shared state across views
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
 
+  // Re-entrancy guard: concurrent 401s run exactly one cleanup pass, and an
+  // in-flight logout can never wipe a session established right after login.
+  const logoutGuardRef = useRef(false);
+
   // Keep track of alerts
   const [alertsCount, setAlertsCount] = useState<number>(0);
 
@@ -82,10 +86,31 @@ export default function App() {
 
     window.addEventListener("auth:unauthorized", handleAuthExpired);
 
+    // Only evict for a genuine session failure:
+    //  - ignore 401s from the logout endpoint itself (expected after
+    //    revocation — reacting to them creates an infinite logout loop), and
+    //  - ignore 401s from requests issued with a PREVIOUS user's token
+    //    (a stale patient request must not evict the new doctor session).
+    const shouldEvict = (error: any): boolean => {
+      if (error?.response?.status !== 401) return false;
+      const url = String(error.config?.url || "");
+      if (url.includes("/auth/logout")) return false;
+      const headers = error.config?.headers;
+      const reqAuth = String(
+        (headers && typeof headers.get === "function" ? headers.get("Authorization") : null) ||
+          headers?.Authorization ||
+          headers?.authorization ||
+          ""
+      );
+      const current = localStorage.getItem("med_token");
+      if (reqAuth && current && !reqAuth.endsWith(current)) return false;
+      return true;
+    };
+
     const clientInterceptor = apiClient.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response && error.response.status === 401) {
+        if (shouldEvict(error)) {
           handleAuthExpired();
         }
         return Promise.reject(error);
@@ -95,7 +120,7 @@ export default function App() {
     const axiosInterceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response && error.response.status === 401) {
+        if (shouldEvict(error)) {
           handleAuthExpired();
         }
         return Promise.reject(error);
@@ -146,6 +171,8 @@ export default function App() {
   };
 
   const handleLoginSuccess = (accessToken: string, user: string, userRole: string) => {
+    // A fresh session always wins: disarm any logout still in progress.
+    logoutGuardRef.current = false;
     localStorage.setItem("med_token", accessToken);
     localStorage.setItem("med_username", user);
     localStorage.setItem("med_role", userRole);
@@ -167,9 +194,13 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    if (logoutGuardRef.current) return; // single cleanup pass per logout
+    logoutGuardRef.current = true;
     // Revoke the server-side session first (best-effort; auth header still set)
     apiService.logout().catch(() => {
       /* server unreachable — local cleanup below is still required */
+    }).finally(() => {
+      logoutGuardRef.current = false;
     });
     localStorage.removeItem("med_token");
     localStorage.removeItem("med_username");
@@ -364,7 +395,7 @@ export default function App() {
               className="text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 font-label-sm text-[11px]"
               title="Access legacy diagnostic dashboards"
             >
-              <span className="material-symbols-outlined text-sm">dashboard_customize</span>
+              <span className="material-symbols-outlined text-sm" data-icon="dashboard_customize" aria-hidden="true" />
               <span>Open Legacy Suite</span>
             </button>
           </div>

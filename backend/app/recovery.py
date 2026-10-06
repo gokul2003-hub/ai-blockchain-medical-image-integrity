@@ -14,6 +14,7 @@ from app.storage_provider import load_encrypted_object
 from app.blockchain import blockchain_service
 from app.digital_twin import get_digital_twin, update_twin_status
 from app.ai_model import get_ai_model, AI_IMAGE_SIZE
+from app.versioning import record_integrity_event, record_recovered_version
 
 def recover_compromised_image(db: Session, image_id: int, user_id: int) -> Dict[str, Any]:
     """
@@ -199,6 +200,37 @@ def recover_compromised_image(db: Session, image_id: int, user_id: int) -> Dict[
     )
     db.add(audit)
     db.commit()
+
+    # Persist the recovered pixels as a new immutable image version (v2) so a
+    # verified recovery actually replaces the quarantined ciphertext for all
+    # later verification passes. Best-effort: the RecoveryRecord above already
+    # captured the real result.
+    record_recovered_version(
+        db=db,
+        image=image,
+        recovered_bytes=recovered_bytes,
+        triggered_by_id=user_id,
+        verification_passed=verification_passed,
+        blockchain_reference=tx_hash,
+    )
+
+    # Persist the real post-recovery SHA-3 verification outcome as an
+    # integrity event (in addition to the RecoveryRecord written above).
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="POST_RECOVERY_SHA3_VERIFICATION",
+        status="VERIFIED" if verification_passed else "MISMATCH",
+        details={
+            "recovered_hash": recovered_sha3,
+            "trusted_hash": twin.trusted_hash,
+            "verification_passed": verification_passed,
+            "tampered_roi_count": len(tampered_rois),
+            "twin_status": twin_status_val,
+            "blockchain_tx_hash": tx_hash,
+        },
+        actor_user_id=user_id,
+    )
 
     recovered_b64 = base64.b64encode(recovered_bytes).decode("utf-8")
 

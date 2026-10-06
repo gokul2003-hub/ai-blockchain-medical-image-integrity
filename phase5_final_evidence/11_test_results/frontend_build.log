@@ -1,0 +1,15 @@
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 2448 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                         1.36 kB │ gzip:   0.66 kB
+dist/assets/index-CjTeenGd.css         60.62 kB │ gzip:  11.00 kB
+dist/assets/vendor-react-ADNFwp3C.js  222.70 kB │ gzip:  65.82 kB
+dist/assets/index-DwMUraMR.js         395.90 kB │ gzip:  86.66 kB
+dist/assets/vendor-ui-DH-ToXRE.js     411.24 kB │ gzip: 110.81 kB
+✓ built in 14.57s
+0 TypeScript errors.

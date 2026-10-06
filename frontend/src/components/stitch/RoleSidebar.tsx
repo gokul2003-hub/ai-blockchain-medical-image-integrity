@@ -13,6 +13,39 @@ interface RoleSidebarProps {
   username?: string | null;
 }
 
+/**
+ * Matches a Material Symbols ligature token (e.g. "grid_view", "fact_check") that has
+ * leaked into a label string as plain text, e.g. "grid_viewDashboard".
+ */
+const ICON_TOKEN_PATTERN = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+/;
+
+/**
+ * Guarantees a nav label renders as clean readable text.
+ * Strips an icon token prefix when one is glued onto the label
+ * ("grid_viewDashboard" -> "Dashboard", "fact_checkDICOM Review" -> "DICOM Review").
+ * Already-clean labels pass through byte-for-byte unchanged.
+ */
+const cleanLabel = (label: string, icon: string = ""): string => {
+  const text = (label || "").trim();
+  if (!text) return text;
+
+  // Label accidentally starts with its own icon token: "fact_checkDICOM Review".
+  if (icon && text.toLowerCase().startsWith(icon.toLowerCase())) {
+    const remainder = text.slice(icon.length);
+    if (remainder && !/^\s/.test(remainder)) return remainder.trim();
+  }
+
+  // Any other snake_case ligature token glued straight onto the label text.
+  const token = ICON_TOKEN_PATTERN.exec(text);
+  if (token) {
+    const boundary = text.charAt(token[0].length);
+    const isUppercaseLetter = boundary !== "" && boundary === boundary.toUpperCase() && boundary !== boundary.toLowerCase();
+    if (isUppercaseLetter) return text.slice(token[0].length).trim();
+  }
+
+  return text;
+};
+
 export const RoleSidebar: React.FC<RoleSidebarProps> = ({
   role,
   activePath,
@@ -32,14 +65,16 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
   const renderNavGroup = (title: string, items: Array<{ id: string; label: string; icon: string; count?: number; badge?: string }>) => (
     <div className="space-y-1 mb-4">
       <div className="px-3 py-1 font-label-sm text-[11px] uppercase tracking-wider text-outline font-semibold">
-        {title}
+        {cleanLabel(title)}
       </div>
       {items.map((item) => {
         const isActive = activePath === item.id;
+        const label = cleanLabel(item.label, item.icon);
         return (
           <button
             key={item.id}
             onClick={() => onNavigate(item.id)}
+            aria-label={label}
             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg font-label-md text-xs transition-colors ${
               isActive
                 ? "bg-surface-container text-primary font-semibold shadow-sm"
@@ -52,10 +87,10 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
                   isActive ? "text-primary" : "text-on-surface-variant"
                 }`}
                 style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}
-              >
-                {item.icon}
-              </span>
-              <span>{item.label}</span>
+                data-icon={item.icon}
+                aria-hidden="true"
+              />
+              <span>{label}</span>
             </div>
             {item.count !== undefined && item.count > 0 && (
               <span className="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant font-code-sm text-[10px]">
@@ -80,9 +115,7 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
       {/* Brand Header */}
       <div className="h-16 px-6 flex items-center gap-3 border-b border-surface-container-low">
         <div className="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-primary font-bold text-sm shadow-sm border border-primary/20">
-          <span className="material-symbols-outlined text-lg text-primary">
-            local_hospital
-          </span>
+          <span className="material-symbols-outlined text-lg text-primary" data-icon="local_hospital" aria-hidden="true" />
         </div>
         <div className="flex flex-col">
           <span className="font-headline-sm text-sm text-primary tracking-tight font-semibold">
@@ -160,7 +193,7 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
             {renderNavGroup("Patient Medical Vault", [
               { id: "patient-dashboard", label: "Dashboard", icon: "home_health" },
               { id: "patient-images", label: "My Medical Images", icon: "perm_media" },
-              { id: "patient-upload", label: "Upload New Scan", icon: "cloud_upload" },
+              { id: "patient-upload", label: "Scan Registration Info", icon: "cloud_upload" },
             ])}
             {renderNavGroup("Privacy & Consent", [
               { id: "patient-consent", label: "My Consent & Access", icon: "lock_person" },
@@ -207,7 +240,7 @@ export const RoleSidebar: React.FC<RoleSidebarProps> = ({
               aria-label="Log out"
               className="p-2 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/30 transition-colors"
             >
-              <span className="material-symbols-outlined text-[18px]">logout</span>
+              <span className="material-symbols-outlined text-[18px]" data-icon="logout" aria-hidden="true" />
             </button>
           )}
         </div>

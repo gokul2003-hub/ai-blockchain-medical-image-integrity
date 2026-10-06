@@ -1,0 +1,20 @@
+============================= test session starts =============================
+platform win32 -- Python 3.10.10, pytest-8.3.4, pluggy-1.5.0
+rootdir: C:\Users\gokul\OneDrive\Desktop\Blockchain Framework
+configfile: pyproject.toml
+collected 421 items
+
+........................................................................ [ 17%]
+........................................................................ [ 34%]
+........................................................................ [ 51%]
+........................................................................ [ 68%]
+........................................................................ [ 85%]
+.............................................................            [100%]
+
+============================== warnings summary ===============================
+backend\venv\lib\site-packages\requests\__init__.py:113
+  C:\Users\gokul\OneDrive\Desktop\Blockchain Framework\backend\venv\lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.8.0) or chardet (7.6.0)/charset_normalizer (3.5.1) doesn't match a supported version!
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 421 passed, 1 warning in 217.03s ========================

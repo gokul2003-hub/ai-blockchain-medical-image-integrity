@@ -14,7 +14,8 @@ export const TrustScoreCard: React.FC<TrustScoreCardProps> = ({
   className = "",
 }) => {
   const displayScore = score !== undefined && score !== null ? Math.round(score) : null;
-  const isHealthy = displayScore === null || displayScore >= 80;
+  const hasScore = displayScore !== null;
+  const isHealthy = hasScore && (displayScore as number) >= 80;
 
   return (
     <div
@@ -26,26 +27,28 @@ export const TrustScoreCard: React.FC<TrustScoreCardProps> = ({
         </span>
         <span
           className={`px-2 py-0.5 rounded font-label-sm text-[11px] font-semibold flex items-center gap-1 ${
-            isHealthy
+            !hasScore
+              ? "bg-surface-container text-on-surface-variant"
+              : isHealthy
               ? "bg-secondary-fixed text-on-secondary-fixed"
               : "bg-error-container text-on-error-container"
           }`}
         >
           <span
             className={`w-1.5 h-1.5 rounded-full ${
-              isHealthy ? "bg-secondary" : "bg-error"
+              !hasScore ? "bg-outline" : isHealthy ? "bg-secondary" : "bg-error"
             }`}
           />
-          {chainSynced ? "Consensus Validated" : "Sync Required"}
+          {!hasScore ? "Awaiting Assessment" : chainSynced ? "Consensus Validated" : "Sync Required"}
         </span>
       </div>
 
       <div className="flex items-baseline gap-2 my-2">
         <span className="font-display-lg text-4xl font-bold text-secondary">
-          {displayScore !== null ? `${displayScore}%` : "98.5%"}
+          {hasScore ? `${displayScore}%` : "N/A"}
         </span>
         <span className="font-body-sm text-xs text-on-surface-variant">
-          Dual-Ledger Cryptographic Anchor
+          {hasScore ? "Dual-Ledger Cryptographic Anchor" : "No trust assessment yet"}
         </span>
       </div>
 

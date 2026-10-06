@@ -11,15 +11,33 @@ interface TamperLocalizationProps {
 
 interface ImageRecord { id: number; title: string; image_type: string; quarantine_status: boolean; }
 
-type ViewMode = "original" | "heatmap" | "overlay" | "split";
+type ViewMode = "original" | "heatmap" | "mask" | "overlay" | "split";
+type ArtifactStatus = "loading" | "ok" | "error";
+
+interface BBox { x?: number; y?: number; width?: number; height?: number; }
+
+interface IntegrityEvidence {
+  affected_regions?: BBox[] | null;
+  ai_forensics?: { bounding_boxes?: BBox[] | null } | null;
+  tamper_percentage?: number | null;
+  ai_confidence?: number | null;
+  verification_status?: string | null;
+  hash_match?: boolean | null;
+}
 
 export default function TamperLocalization({ token, selectedImageId, onSelectImage }: TamperLocalizationProps) {
   const [images, setImages]       = useState<ImageRecord[]>([]);
   const [imgSearch, setImgSearch] = useState("");
   const [origSrc, setOrigSrc]     = useState<string | null>(null);
   const [heatSrc, setHeatSrc]     = useState<string | null>(null);
+  const [maskSrc, setMaskSrc]     = useState<string | null>(null);
   const [loadingOrig, setLoadingOrig] = useState(false);
   const [loadingHeat, setLoadingHeat] = useState(false);
+  const [loadingMask, setLoadingMask] = useState(false);
+  const [heatStatus, setHeatStatus]   = useState<ArtifactStatus>("loading");
+  const [maskStatus, setMaskStatus]   = useState<ArtifactStatus>("loading");
+  const [evidence, setEvidence]       = useState<IntegrityEvidence | null>(null);
+  const [evidenceStatus, setEvidenceStatus] = useState<ArtifactStatus>("loading");
   const [viewMode, setViewMode]   = useState<ViewMode>("split");
   const [opacity, setOpacity]     = useState(60);
   const blobsRef = useRef<string[]>([]);
@@ -35,20 +53,44 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
     // Revoke previous
     blobsRef.current.forEach(b => URL.revokeObjectURL(b));
     blobsRef.current = [];
-    setOrigSrc(null); setHeatSrc(null);
-    setLoadingOrig(true); setLoadingHeat(true);
+    setOrigSrc(null); setHeatSrc(null); setMaskSrc(null);
+    setLoadingOrig(true); setLoadingHeat(true); setLoadingMask(true);
+    setHeatStatus("loading"); setMaskStatus("loading");
+    setEvidenceStatus("loading"); setEvidence(null);
 
     try {
       const url = await fetchProtectedBlobUrl(`/api/images/preview/${id}`);
       blobsRef.current.push(url);
       setOrigSrc(url);
-    } catch { /* silent */ } finally { setLoadingOrig(false); }
+    } catch {
+      setOrigSrc(null);
+    } finally { setLoadingOrig(false); }
 
     try {
+      // Heatmap endpoint serves the Grad-CAM attribution overlay (JET colormap)
+      // written by the AI pipeline — same artifact, honestly labelled.
       const url = await fetchProtectedBlobUrl(`/api/images/heatmap/by-image/${id}`);
       blobsRef.current.push(url);
-      setHeatSrc(url);
-    } catch { /* silent */ } finally { setLoadingHeat(false); }
+      setHeatSrc(url); setHeatStatus("ok");
+    } catch {
+      setHeatSrc(null); setHeatStatus("error");
+    } finally { setLoadingHeat(false); }
+
+    try {
+      // Swin-UNet binary localization mask
+      const url = await fetchProtectedBlobUrl(`/api/images/localization-mask/by-image/${id}`);
+      blobsRef.current.push(url);
+      setMaskSrc(url); setMaskStatus("ok");
+    } catch {
+      setMaskSrc(null); setMaskStatus("error");
+    } finally { setLoadingMask(false); }
+
+    try {
+      const res = await apiClient.get(`/api/images/${id}/integrity-evidence`);
+      setEvidence(res.data); setEvidenceStatus("ok");
+    } catch {
+      setEvidence(null); setEvidenceStatus("error");
+    }
   }, []);
 
   useEffect(() => {
@@ -63,9 +105,37 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
   const viewModes: { id: ViewMode; label: string }[] = [
     { id: "original", label: "Original" },
     { id: "heatmap",  label: "Heatmap" },
+    { id: "mask",     label: "Localization" },
     { id: "overlay",  label: "Overlay" },
     { id: "split",    label: "Split" },
   ];
+
+  const availChip = (status: ArtifactStatus, label: string) => (
+    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+      status === "ok" ? "bg-emerald-900/60 text-emerald-300"
+      : status === "error" ? "bg-rose-900/60 text-rose-300"
+      : "bg-slate-800 text-slate-400"}`}>
+      {label}: {status === "ok" ? "Available" : status === "error" ? "Not available" : "Loading…"}
+    </span>
+  );
+
+  // Real region data from integrity-evidence only
+  const regionList: BBox[] | null =
+    evidenceStatus === "ok" && evidence
+      ? (Array.isArray(evidence.affected_regions) && evidence.affected_regions.length > 0
+          ? evidence.affected_regions
+          : Array.isArray(evidence.ai_forensics?.bounding_boxes) && (evidence.ai_forensics?.bounding_boxes?.length ?? 0) > 0
+            ? evidence.ai_forensics!.bounding_boxes!
+            : null)
+      : null;
+
+  const unavailableBox = (label: string) => (
+    <div className="text-slate-600 text-xs text-center space-y-1">
+      <AlertTriangle className="h-5 w-5 mx-auto text-slate-700" />
+      <div className="font-semibold text-slate-500">Not available</div>
+      <div className="text-[10px] text-slate-700">{label}</div>
+    </div>
+  );
 
   return (
     <div className="w-full space-y-5">
@@ -75,8 +145,17 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
           Tamper Localization
         </h2>
         <p className="text-xs text-slate-400 mt-1">
-          AI-generated segmentation overlay · Grad-CAM regional attention map
+          Real backend artifacts · Grad-CAM overlay via heatmap endpoint · Swin-UNet binary mask via localization-mask endpoint
         </p>
+        {/* Numbered forensic flow caption */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2 text-[11px] text-slate-500">
+          <span className="font-semibold text-slate-300">Flow:</span>
+          <span>1. Original</span><span>→</span>
+          <span>2. Current (tamper state)</span><span>→</span>
+          <span>3. Heatmap / Grad-CAM</span><span>→</span>
+          <span>4. Localization Mask</span><span>→</span>
+          <span className="font-semibold text-slate-300">5. Suspicious Region</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-5">
@@ -123,10 +202,11 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
         </div>
 
         {/* Viewer */}
-        <div className="xl:col-span-3 glass-panel overflow-hidden">
+        <div className="xl:col-span-3 space-y-5">
+          <div className="glass-panel overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between bg-slate-900/40">
             <span className="text-xs font-semibold text-slate-300">
-              {viewMode === "split" ? "Original / AI Heatmap" : viewModes.find(v => v.id === viewMode)?.label}
+              {viewMode === "split" ? "Original / Heatmap-Grad-CAM" : viewModes.find(v => v.id === viewMode)?.label}
             </span>
             {selectedImageId && (
               <span className="text-[10px] text-slate-600">Image #{selectedImageId}</span>
@@ -151,22 +231,18 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
                   ) : origSrc ? (
                     <img src={origSrc} alt="Original" className="max-h-[440px] max-w-full object-contain" />
                   ) : (
-                    <div className="text-slate-700 text-xs text-center">
-                      <AlertTriangle className="h-5 w-5 mx-auto mb-1" />Unavailable
-                    </div>
+                    unavailableBox("Preview endpoint failed for this image")
                   )}
                 </div>
-                {/* Heatmap */}
+                {/* Heatmap / Grad-CAM */}
                 <div className="flex items-center justify-center p-4 relative">
-                  <div className="absolute top-2 left-2 text-[9px] bg-slate-900/80 text-rose-400 px-2 py-0.5 rounded font-bold">AI HEATMAP</div>
+                  <div className="absolute top-2 left-2 text-[9px] bg-slate-900/80 text-rose-400 px-2 py-0.5 rounded font-bold">HEATMAP / GRAD-CAM</div>
                   {loadingHeat ? (
                     <RefreshCw className="h-5 w-5 animate-spin text-slate-600" />
                   ) : heatSrc ? (
-                    <img src={heatSrc} alt="AI Heatmap" className="max-h-[440px] max-w-full object-contain" />
+                    <img src={heatSrc} alt="Heatmap / Grad-CAM overlay" className="max-h-[440px] max-w-full object-contain" />
                   ) : (
-                    <div className="text-slate-700 text-xs text-center">
-                      <AlertTriangle className="h-5 w-5 mx-auto mb-1" />Unavailable
-                    </div>
+                    unavailableBox("Heatmap / Grad-CAM artifact missing for this image")
                   )}
                 </div>
               </div>
@@ -174,13 +250,19 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
               <div className="flex items-center justify-center p-4" style={{ minHeight: "480px" }}>
                 {loadingOrig ? <RefreshCw className="h-6 w-6 animate-spin text-slate-600" /> :
                   origSrc ? <img src={origSrc} alt="Original" className="max-h-[480px] object-contain" /> :
-                  <div className="text-slate-700 text-xs">Image unavailable</div>}
+                  unavailableBox("Preview endpoint failed for this image")}
               </div>
             ) : viewMode === "heatmap" ? (
               <div className="flex items-center justify-center p-4" style={{ minHeight: "480px" }}>
                 {loadingHeat ? <RefreshCw className="h-6 w-6 animate-spin text-slate-600" /> :
-                  heatSrc ? <img src={heatSrc} alt="Heatmap" className="max-h-[480px] object-contain" /> :
-                  <div className="text-slate-700 text-xs">Heatmap unavailable</div>}
+                  heatSrc ? <img src={heatSrc} alt="Heatmap / Grad-CAM" className="max-h-[480px] object-contain" /> :
+                  unavailableBox("Heatmap / Grad-CAM artifact missing for this image")}
+              </div>
+            ) : viewMode === "mask" ? (
+              <div className="flex items-center justify-center p-4" style={{ minHeight: "480px" }}>
+                {loadingMask ? <RefreshCw className="h-6 w-6 animate-spin text-slate-600" /> :
+                  maskSrc ? <img src={maskSrc} alt="Localization mask" className="max-h-[480px] object-contain" /> :
+                  unavailableBox("Localization mask artifact missing for this image")}
               </div>
             ) : viewMode === "overlay" && origSrc ? (
               <div className="flex items-center justify-center p-4 relative" style={{ minHeight: "480px" }}>
@@ -201,6 +283,50 @@ export default function TamperLocalization({ token, selectedImageId, onSelectIma
                 <div className="text-slate-700 text-xs">Loading...</div>
               </div>
             )}
+          </div>
+          </div>
+
+          {/* TAMPER LOCATION — evidence panel (real integrity-evidence region data only) */}
+          <div className="glass-panel p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Crosshair className="h-3.5 w-3.5" /> TAMPER LOCATION
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {availChip(maskStatus, "Localization")}
+                {availChip(heatStatus, "Heatmap")}
+                {availChip(heatStatus, "Grad-CAM")}
+              </div>
+            </div>
+
+            <div className="space-y-1.5 font-mono text-[11px] text-slate-400">
+              {evidenceStatus === "loading" ? (
+                <div className="flex items-center gap-2 text-slate-500">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading integrity evidence…
+                </div>
+              ) : evidenceStatus === "error" ? (
+                <div className="text-slate-600 italic">
+                  Not available — integrity-evidence endpoint unreachable for this image
+                </div>
+              ) : regionList && regionList.length > 0 ? (
+                <>
+                  <div className="text-slate-300">
+                    Detected suspicious region: {regionList.length} region{regionList.length > 1 ? "s" : ""} (backend AI forensic output)
+                  </div>
+                  {regionList.slice(0, 10).map((r, i) => (
+                    <div key={i} className="flex justify-between border-b border-slate-900/50 last:border-b-0 py-0.5">
+                      <span className="text-rose-400 font-bold">Region #{i + 1}</span>
+                      <span>X: {r.x ?? "—"}, Y: {r.y ?? "—"} · W: {r.width ?? "—"}, H: {r.height ?? "—"}</span>
+                    </div>
+                  ))}
+                  {regionList.length > 10 && <div className="text-slate-600">…and {regionList.length - 10} more</div>}
+                </>
+              ) : (
+                <div className="text-slate-600 italic">
+                  Not available — backend returned no region data for this image
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

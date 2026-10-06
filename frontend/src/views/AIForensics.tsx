@@ -32,6 +32,7 @@ interface ForensicMedia {
   preview: string | null;
   srm: string | null;
   heatmap: string | null;
+  mask: string | null;
 }
 
 const MediaPanel = ({
@@ -70,7 +71,7 @@ const MediaPanel = ({
 export default function AIForensics({ token, selectedImageId, onSelectImage, onViewChange }: AIForensicsProps) {
   const [images, setImages]   = useState<ImageRecord[]>([]);
   const [imgSearch, setImgSearch] = useState("");
-  const [media, setMedia]     = useState<ForensicMedia>({ preview: null, srm: null, heatmap: null });
+  const [media, setMedia]     = useState<ForensicMedia>({ preview: null, srm: null, heatmap: null, mask: null });
   const [twin, setTwin]       = useState<TwinData | null>(null);
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [errors, setErrors]   = useState<Record<string, string>>({});
@@ -93,10 +94,10 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
 
   const loadForensics = useCallback(async (id: number) => {
     clearBlobs();
-    setMedia({ preview: null, srm: null, heatmap: null });
+    setMedia({ preview: null, srm: null, heatmap: null, mask: null });
     setTwin(null);
     setErrors({});
-    setLoading({ preview: true, srm: true, heatmap: true, twin: true });
+    setLoading({ preview: true, srm: true, heatmap: true, mask: true, twin: true });
 
     const safeLoad = async (key: string, fn: () => Promise<string | null>) => {
       try {
@@ -115,6 +116,7 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
       safeLoad("preview", () => fetchProtectedBlobUrl(`/api/images/preview/${id}`)),
       safeLoad("srm",     () => fetchProtectedBlobUrl(`/api/images/srm-residual/${id}`)),
       safeLoad("heatmap", () => fetchProtectedBlobUrl(`/api/images/heatmap/by-image/${id}`)),
+      safeLoad("mask",    () => fetchProtectedBlobUrl(`/api/images/localization-mask/by-image/${id}`)),
       (async () => {
         try {
           const res = await apiClient.get(`/api/images/digital-twin/${id}`);
@@ -190,9 +192,9 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
         {/* Main Analysis Area */}
         <div className="xl:col-span-3 space-y-4">
           {/* Four-panel forensic grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <MediaPanel
-              label="Original (Decrypted)"
+              label="PACS / Ingested Scan"
               src={media.preview}
               loading={!!loading.preview}
               error={errors.preview || null}
@@ -200,7 +202,7 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
               accentColor="text-blue-400"
             />
             <MediaPanel
-              label="SRM Noise Residual"
+              label="SRM Residual Filter"
               src={media.srm}
               loading={!!loading.srm}
               error={errors.srm || null}
@@ -208,11 +210,19 @@ export default function AIForensics({ token, selectedImageId, onSelectImage, onV
               accentColor="text-cyan-400"
             />
             <MediaPanel
-              label="AI Tamper Heatmap"
+              label="Swin-UNet Localization Mask"
+              src={media.mask}
+              loading={!!loading.mask}
+              error={errors.mask || null}
+              icon={Crosshair}
+              accentColor="text-amber-400"
+            />
+            <MediaPanel
+              label="Grad-CAM Neural Attention Map"
               src={media.heatmap}
               loading={!!loading.heatmap}
               error={errors.heatmap || null}
-              icon={Crosshair}
+              icon={ScanSearch}
               accentColor="text-rose-400"
             />
           </div>

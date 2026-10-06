@@ -116,8 +116,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
     try {
       if (activeTab === "register") {
-        if (verifyState !== "verified") {
-          setError("Please verify your identity ID against the registry before creating the account.");
+        // Identity verification is OPTIONAL for doctor/patient/researcher:
+        // - ID left blank  -> registration proceeds without registry verification
+        // - ID provided    -> must be verified server-side first
+        // - Admin accounts -> pre-provisioned Admin ID always REQUIRED (RBAC gate)
+        const hasIdentity = !!identityId.trim();
+        const requiresVerifiedId = regRole === "admin" || hasIdentity;
+        if (requiresVerifiedId && verifyState !== "verified") {
+          setError(
+            regRole === "admin"
+              ? "Admin registration requires a pre-provisioned Admin ID. Please verify it against the registry first."
+              : "Please verify your identity ID against the registry before creating the account. Leave the field blank to skip optional verification."
+          );
           setLoading(false);
           return;
         }
@@ -140,11 +150,13 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           `${API_BASE_URL}/api/auth/register/admin`;
 
         const regPayload: Record<string, unknown> = {
-          identity_id: identityId.trim(),
           username: username.trim(),
           email: email.trim(),
           password,
         };
+        if (hasIdentity) {
+          regPayload.identity_id = identityId.trim();
+        }
         if (regRole === "researcher" || regRole === "admin") {
           regPayload.institution = institution.trim() || "Unspecified Institution";
         }
@@ -166,7 +178,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           return r.json();
         });
 
-        setSuccessMsg("Identity verified and account provisioned. Please sign in.");
+        setSuccessMsg(hasIdentity
+          ? "Identity verified and account provisioned. Please sign in."
+          : "Account provisioned. Please sign in.");
         setActiveTab("signin");
         setConfirmPassword("");
         setIdentityId("");
@@ -237,7 +251,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="w-full max-w-xl mx-auto bg-white rounded-3xl p-6 sm:p-9 shadow-2xl shadow-slate-900/10 border border-slate-100 flex flex-col justify-between">
+    <div className="w-full max-w-xl mx-auto bg-white rounded-3xl p-5 sm:p-7 shadow-2xl shadow-slate-900/10 border border-slate-100 flex flex-col justify-between">
       
       {/* Container Header */}
       <div>
@@ -258,11 +272,6 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               </span>
             </div>
           </div>
-
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200/60 text-emerald-700 text-xs font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-mono text-[11px]">Enclave Online</span>
-          </div>
         </div>
 
         {/* Heading */}
@@ -281,6 +290,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
           <button
             type="button"
+            aria-pressed={activeTab === "signin"}
             onClick={() => {
               setActiveTab("signin");
               setError(null);
@@ -296,6 +306,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           </button>
           <button
             type="button"
+            aria-pressed={activeTab === "register"}
             onClick={() => {
               setActiveTab("register");
               setError(null);
@@ -313,14 +324,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
 
         {/* Feedback / Alert Banners */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+          <div role="alert" className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
             <span className="leading-snug">{error}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
+          <div role="status" aria-live="polite" className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-start gap-2.5 animate-in fade-in duration-150">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
             <span className="leading-snug">{successMsg}</span>
           </div>
@@ -365,7 +376,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               {/* Role-Specific Identity ID + live verification */}
               <div>
                 <label htmlFor="identity-id" className="text-xs font-semibold text-slate-700 block mb-1">
-                  {identityFieldLabel} <span className="text-cyan-600">(verified server-side)</span>
+                  {identityFieldLabel} <span className="text-cyan-600">{regRole === "admin" ? "(required — verified server-side)" : "(optional — verified server-side)"}</span>
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -506,11 +517,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               {activeTab === "signin" && (
                 <button
                   type="button"
-                  onClick={() => setPassword("Password123!")}
+                  onClick={() => handleSelectRolePreset(selectedRoleKey)}
                   className="text-[11px] text-cyan-600 hover:text-cyan-700 font-medium hover:underline flex items-center gap-1"
                 >
                   <Key className="w-3 h-3" />
-                  Fill Demo Key
+                  Use demo credentials
                 </button>
               )}
             </div>
@@ -530,8 +541,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/40 rounded-lg"
                 aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -568,13 +580,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           {showMfa && (
             <div className="p-3.5 rounded-xl bg-cyan-50/60 border border-cyan-200 space-y-2 animate-in fade-in duration-150">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-cyan-900 flex items-center gap-1.5">
+                <label htmlFor="mfa-code" className="text-xs font-bold text-cyan-900 flex items-center gap-1.5">
                   <ShieldAlert className="w-3.5 h-3.5 text-cyan-600" />
                   MFA TOTP 6-Digit Code
                 </label>
                 <span className="text-[10px] text-cyan-700 font-mono">Authenticator App</span>
               </div>
               <input
+                id="mfa-code"
                 type="text"
                 maxLength={6}
                 value={mfaCode}
@@ -588,8 +601,9 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           {/* Remember Me & Forgot Password (Sign in tab) */}
           {activeTab === "signin" && (
             <div className="flex items-center justify-between pt-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-600">
+              <label htmlFor="remember-me" className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-600 py-2 pl-1 pr-3 -ml-1 rounded-lg">
                 <input
+                  id="remember-me"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
@@ -612,7 +626,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 px-4 rounded-xl text-white font-semibold text-xs font-['Outfit'] tracking-wide bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:via-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/25 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2 group"
+            className="w-full mt-2 py-3 px-4 rounded-xl text-white font-semibold text-xs font-['Outfit'] tracking-wide bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:via-blue-500 hover:to-indigo-500 shadow-lg shadow-blue-500/25 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2 group focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/60 focus-visible:ring-offset-2"
           >
             {loading ? (
               <>
@@ -621,7 +635,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
               </>
             ) : (
               <>
-                <span>{activeTab === "register" ? "Create Cryptographic Identity" : "Sign In"}</span>
+                <span>{activeTab === "register" ? "Create Cryptographic Identity" : "Sign in to workspace"}</span>
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
               </>
             )}

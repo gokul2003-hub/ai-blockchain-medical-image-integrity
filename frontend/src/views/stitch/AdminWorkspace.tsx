@@ -252,7 +252,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
             />
             <MetricCard
               title="Cryptographic Nodes"
-              value={`${hospitals.length || 1} / ${Math.max(1, hospitals.length)}`}
+              value={`${hospitals.length} / ${Math.max(1, hospitals.length)}`}
               unit="Active"
               subtitle="Consensus: PBFT Strict Quorum"
               icon="hub"
@@ -391,7 +391,10 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                         <td className="py-2 px-2.5 font-semibold text-on-surface">{p.username}</td>
                         <td className="py-2 px-2.5 text-on-surface-variant">{p.email}</td>
                         <td className="py-2 px-2.5">
-                          <StatusPill variant="verified" label="Active" />
+                          <StatusPill
+                            variant={p.is_active === false ? "tampered" : "verified"}
+                            label={p.is_active === false ? "Disabled" : "Active"}
+                          />
                         </td>
                         <td className="py-2 px-2.5 text-right">
                           <button

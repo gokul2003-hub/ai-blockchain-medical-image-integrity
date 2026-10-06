@@ -119,9 +119,19 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
   // configured API base and the Authorization header, so previews are loaded
   // as protected blobs instead.
   const [thumbUrls, setThumbUrls] = useState<Record<number, string>>({});
+  // Previews that failed to load (missing/undecryptable stored object) so the
+  // card can show an honest "unavailable" state instead of a blank area.
+  const [failedThumbs, setFailedThumbs] = useState<Record<number, boolean>>({});
+  const refreshScans = async () => {
+    try {
+      const updated = await apiService.listImages();
+      if (Array.isArray(updated)) setImages(updated);
+    } catch { /* keep current list */ }
+  };
   useEffect(() => {
     let active = true;
     const created: string[] = [];
+    setFailedThumbs({});
     if (images.length === 0) {
       setThumbUrls({});
       return;
@@ -137,7 +147,8 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
           created.push(url);
           setThumbUrls((prev) => ({ ...prev, [img.id]: url }));
         } catch {
-          // Preview unavailable for this image — leave placeholder
+          // Preview unavailable (missing/undecryptable object) — mark card
+          setFailedThumbs((prev) => (active ? { ...prev, [img.id]: true } : prev));
         }
       }
     })();
@@ -262,7 +273,7 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab("upload")}
+          onClick={() => setActiveTab("images")}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg font-label-md text-xs transition-all ${
             activeTab === "upload"
               ? "bg-surface-container-lowest text-primary font-semibold shadow-sm"
@@ -270,7 +281,7 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">cloud_upload</span>
-          <span>Upload New Scan</span>
+          <span>Scan Registration Info</span>
         </button>
 
         <button
@@ -302,11 +313,11 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setActiveTab("upload")}
+              onClick={refreshScans}
               className="px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-xs hover:bg-primary-container shadow-sm flex items-center gap-1.5"
             >
-              <span className="material-symbols-outlined text-sm">upload</span>
-              <span>Upload Scan</span>
+              <span className="material-symbols-outlined text-sm">refresh</span>
+              <span>Refresh Scans</span>
             </button>
           </div>
 
@@ -314,9 +325,9 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
             <EmptyState
               icon="photo_library"
               title="No Scans Registered"
-              description="You have not uploaded any medical images or diagnostic scans yet."
-              actionText="Upload Your First Scan"
-              onAction={() => setActiveTab("upload")}
+              description="No diagnostic scans are registered to your account yet. Your care team registers each verified scan."
+              actionText="Refresh Scans"
+              onAction={refreshScans}
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -334,6 +345,17 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
                           alt={img.title || "Scan"}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90"
                         />
+                      ) : failedThumbs[img.id] ? (
+                        <div className="text-center px-3">
+                          <span className="material-symbols-outlined text-3xl text-on-surface-variant/50 block">
+                            {img.quarantine_status ? "gpp_maybe" : "broken_image"}
+                          </span>
+                          <span className="font-label-sm text-[10px] text-on-surface-variant/80 mt-1 block">
+                            {img.quarantine_status
+                              ? "Preview blocked — tamper hold"
+                              : "Preview unavailable for this record"}
+                          </span>
+                        </div>
                       ) : (
                         <span className="material-symbols-outlined text-4xl text-on-surface-variant/40">
                           medical_information
@@ -388,10 +410,26 @@ export const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({
         </section>
       )}
 
-      {/* TAB 2: UPLOAD SCAN */}
+      {/* TAB 2: SCAN REGISTRATION INFO (uploads are staff-only per RBAC) */}
       {activeTab === "upload" && (
         <section className="space-y-4">
-          <FileUploadZone onUpload={handleUploadScan} />
+          <div className="bg-surface-container-lowest rounded-xl border border-surface-container-high/60 p-6 sm:p-8 text-center space-y-2.5">
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant/60 block">policy</span>
+            <h3 className="font-headline-sm text-sm font-semibold text-on-surface">
+              Scan registration is performed by your care team
+            </h3>
+            <p className="font-body-sm text-xs text-on-surface-variant max-w-lg mx-auto">
+              New diagnostic scans are uploaded by authorized clinical staff under hospital
+              policy. Every scan registered to you appears under My Medical Images once it
+              has been verified, encrypted, and integrity-sealed.
+            </p>
+            <button
+              onClick={() => setActiveTab("images")}
+              className="mt-1 px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-xs hover:bg-primary-container shadow-sm"
+            >
+              View Registered Scans
+            </button>
+          </div>
         </section>
       )}
 

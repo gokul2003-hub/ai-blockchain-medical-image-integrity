@@ -34,6 +34,12 @@ from app.access_policy import evaluate_risk_adaptive_access, ACTION_ALLOW, ACTIO
 from app.recovery import recover_compromised_image
 from app.ai_model import extract_srm_residual, localize_tampering
 from app.authorization import authorize_image_action, authorize_emergency_access, write_audit
+from app.versioning import (
+    ensure_image_version,
+    record_ai_inference,
+    record_integrity_event,
+    record_tamper_risk_log,
+)
 
 router = APIRouter(prefix="/images", tags=["Medical Images"])
 doctor_or_admin_guard = RoleChecker(["super_admin", "hospital_admin", "doctor", "radiologist"])
@@ -208,6 +214,11 @@ async def upload_medical_image(
             commit=False,
         )
 
+        # 4.6 Materialize version 1 of the image (real row derived from the
+        # registered hashes/storage reference; feeds integrity_events and
+        # ai_inferences which key off image_versions).
+        ensure_image_version(db, db_image, integrity_status="VERIFIED", commit=False)
+
         # 5. Stage the local ledger event with the registration transaction.
         # A configured external chain cannot be atomically rolled back.
         tx_hash = blockchain_service.record_upload(
@@ -337,6 +348,9 @@ async def upload_dicom_image(
             ipfs_cid=file_reference,
             slice_hash=original_hash,
         ))
+
+        # 5.1 Materialize version 1 of the image for the integrity-event log.
+        ensure_image_version(db, db_image, integrity_status="VERIFIED", commit=False)
 
         # 6. Stage local ledger event and audit record before the sole commit.
         tx_hash = blockchain_service.record_upload(
@@ -502,6 +516,44 @@ async def preview_medical_image(
     # Record successful verification on blockchain
     blockchain_service.record_verification(db, image_id, "VERIFIED", {"user_id": current_user.id, "context": "preview"})
 
+    # Persist the real SHA-3 recompute result as an integrity event
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="CONTINUOUS_VERIFICATION",
+        status="VERIFIED",
+        details={
+            "expected_hash": image.original_hash,
+            "actual_hash": current_hash,
+            "hash_match": True,
+            "context": "preview",
+        },
+        actor_user_id=current_user.id,
+    )
+
+    # Risk-Adaptive Access Control: evaluate real risk/trust for this access.
+    # quarantine_status can only ever be set by a previously recorded SHA-3
+    # mismatch (or by the risk policy itself), so it feeds the mismatch signal.
+    _access_report = db.query(Report).filter(Report.image_id == image.id).order_by(Report.id.desc()).first()
+    access_action, access_risk, access_trust = evaluate_risk_adaptive_access(
+        db=db,
+        user=current_user,
+        image=image,
+        ai_confidence=(_access_report.confidence_score if _access_report else 0.0) or 0.0,
+        tampered_pixel_pct=(_access_report.tampered_percentage if _access_report else 0.0) or 0.0,
+        sha3_mismatch=bool(image.quarantine_status),
+        blockchain_mismatch=False,
+    )
+    if access_action != ACTION_ALLOW:
+        record_tamper_risk_log(
+            db=db,
+            image=image,
+            user_id=current_user.id,
+            risk_breakdown=access_risk,
+            trust_breakdown=access_trust,
+            access_decision=access_action,
+        )
+
     if image.quarantine_status:
         watermarked = watermark_image(decrypted_bytes, "SECURITY ALERT: QUARANTINED SCAN")
         return Response(content=watermarked, media_type="image/png")
@@ -640,6 +692,20 @@ async def download_medical_image(
 
     # 8. Record verified audit trails & Client Device Fingerprints on success
     blockchain_service.record_verification(db, image_id, "VERIFIED", {"user_id": current_user.id})
+    # Persist the real SHA-3 recompute result as an integrity event
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="CONTINUOUS_VERIFICATION",
+        status="VERIFIED",
+        details={
+            "expected_hash": image.original_hash,
+            "actual_hash": current_hash,
+            "hash_match": True,
+            "context": "download",
+        },
+        actor_user_id=current_user.id,
+    )
     audit = AuditLog(
         user_id=current_user.id,
         image_id=image_id,
@@ -736,6 +802,8 @@ async def handle_tampering_pathway(
                 "model_provenance": ai_res.get("model_provenance", {})
             })
             db.commit()
+            # Persist the real Swin-UNet/SRM inference (ai_inferences write path)
+            record_ai_inference(db, image, ai_res, requested_by_id=user_id)
 
         # Log alert to Blockchain
         blockchain_service.record_tamper_alert(
@@ -832,6 +900,7 @@ async def handle_tampering_pathway(
             report_details["model_provenance"] = ai_res.get("model_provenance", {})
             existing_report.details = json.dumps(report_details)
             db.commit()
+            record_ai_inference(db, image, ai_res, requested_by_id=user_id)
             report_status = "TAMPERED"
     else:
         # Case B: Heatmap file does NOT exist
@@ -863,6 +932,8 @@ async def handle_tampering_pathway(
                             report_details["model_provenance"] = res_data.get("model_provenance", {})
                             existing_report.details = json.dumps(report_details)
                             db.commit()
+                            # Real Celery result: persist it as an AI inference record
+                            record_ai_inference(db, image, res_data, requested_by_id=user_id)
                             report_status = "TAMPERED"
                 except Exception as task_err:
                     logger.warning(f"Error checking Celery task state ({task_err}). Executing localization synchronously.")
@@ -889,6 +960,7 @@ async def handle_tampering_pathway(
                 report_details["model_provenance"] = ai_res.get("model_provenance", {})
                 existing_report.details = json.dumps(report_details)
                 db.commit()
+                record_ai_inference(db, image, ai_res, requested_by_id=user_id)
                 report_status = "TAMPERED"
 
     # Evaluate Risk & Trust Scores
@@ -911,6 +983,52 @@ async def handle_tampering_pathway(
     # Set image quarantine status and update Digital Twin
     image.quarantine_status = True
     db.commit()
+
+    # Risk-Adaptive Access Control: run the real policy over the values just
+    # computed. The SHA-3 mismatch above always resolves to a restrictive
+    # decision; a RECOVERED twin state never overrides an active mismatch.
+    policy_actor = db.query(User).filter(User.id == user_id).first()
+    policy_action, _policy_risk, _policy_trust = evaluate_risk_adaptive_access(
+        db=db,
+        user=policy_actor,
+        image=image,
+        ai_confidence=existing_report.confidence_score or 0.0,
+        tampered_pixel_pct=existing_report.tampered_percentage or 0.0,
+        sha3_mismatch=True,
+        blockchain_mismatch=True,
+    )
+    access_decision = policy_action if policy_action != ACTION_ALLOW else ACTION_QUARANTINE
+
+    # Persist the REAL computed risk/trust values (tamper_risk_logs write path)
+    record_tamper_risk_log(
+        db=db,
+        image=image,
+        user_id=user_id,
+        risk_breakdown=risk_breakdown,
+        trust_breakdown=trust_breakdown,
+        access_decision=access_decision,
+        commit=False,
+    )
+
+    # Persist the real SHA-3 mismatch as an integrity event
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="CONTINUOUS_VERIFICATION",
+        status="MISMATCH",
+        details={
+            "expected_hash": image.original_hash,
+            "actual_hash": current_hash,
+            "context": "tamper_detection_pathway",
+            "risk_score": risk_breakdown["total_tamper_risk_score"],
+            "trust_score": trust_breakdown["cybersecurity_trust_score"],
+            "access_decision": access_decision,
+        },
+        actor_user_id=user_id,
+        commit=False,
+    )
+    db.commit()
+
     update_twin_status(
         db,
         image.id,
@@ -1010,7 +1128,7 @@ async def handle_tampering_pathway(
             "cybersecurity_trust_score": trust_breakdown["cybersecurity_trust_score"],
             "trust_level": trust_breakdown["trust_level"],
             "trust_breakdown": trust_breakdown,
-            "access_decision": ACTION_QUARANTINE,
+            "access_decision": access_decision,
             "quarantine_status": True,
             "srm_residual_filename": f"srm_img_{image.id}.png"
         }
@@ -1141,11 +1259,20 @@ async def get_heatmap_image(
 
     patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
     if current_user.role != "super_admin" and (not patient or patient.user_id != current_user.id):
-        try:
-            authorize_image_action(db, current_user, image, "view", purpose="HEATMAP_VIEW", request=request)
-        except HTTPException:
-            if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for heatmap")
+        # Same-hospital clinical staff may view derived forensic outputs
+        # (consistent with the /preview authorization rule).
+        same_hospital_staff = (
+            current_user.role in {"doctor", "radiologist", "hospital_admin"}
+            and bool(current_user.hospital_id)
+            and bool(image.hospital_id)
+            and current_user.hospital_id == image.hospital_id
+        )
+        if not same_hospital_staff:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="HEATMAP_VIEW", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for heatmap")
 
     heatmap_filename = f"heatmap_img_{image.id}.png"
     path = STORAGE_DIR / "heatmaps" / heatmap_filename
@@ -1165,6 +1292,56 @@ async def get_heatmap_image(
     if not path.exists():
         raise HTTPException(status_code=404, detail="Heatmap image not found")
     return FileResponse(str(path), media_type="image/png")
+
+@router.get("/localization-mask/by-image/{image_id}")
+async def get_localization_mask_image(
+    image_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Serves the Swin-UNet binary localization mask produced by the existing
+    AI tamper pipeline. Auto-generates the mask if it is not yet on disk.
+    """
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+
+    patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
+    if current_user.role != "super_admin" and (not patient or patient.user_id != current_user.id):
+        # Same-hospital clinical staff may view derived forensic outputs
+        # (consistent with the /preview authorization rule).
+        same_hospital_staff = (
+            current_user.role in {"doctor", "radiologist", "hospital_admin"}
+            and bool(current_user.hospital_id)
+            and bool(image.hospital_id)
+            and current_user.hospital_id == image.hospital_id
+        )
+        if not same_hospital_staff:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="HEATMAP_VIEW", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for localization mask")
+
+    mask_path = STORAGE_DIR / "heatmaps" / f"mask_img_{image.id}.png"
+    if not mask_path.exists():
+        # Generate mask (and heatmap) via the existing AI pipeline
+        try:
+            encrypted_bytes = load_encrypted_object(image.file_path)
+            try:
+                decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
+            except Exception:
+                decrypted_bytes = encrypted_bytes
+            localize_tampering(decrypted_bytes, f"heatmap_img_{image.id}.png")
+        except Exception as e:
+            logger.error(f"Failed to auto-generate localization mask: {e}")
+            raise HTTPException(status_code=500, detail=f"Mask generation failed: {e}")
+
+    if not mask_path.exists():
+        raise HTTPException(status_code=404, detail="Localization mask image not found")
+    return FileResponse(str(mask_path), media_type="image/png")
 
 @router.get("/fhir/document/{image_id}")
 async def get_fhir_document_reference(
@@ -1355,11 +1532,20 @@ async def get_srm_residual_image(
 
     patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
     if current_user.role != "super_admin" and (not patient or patient.user_id != current_user.id):
-        try:
-            authorize_image_action(db, current_user, image, "view", purpose="SRM_ANALYSIS", request=request)
-        except HTTPException:
-            if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for SRM residual")
+        # Same-hospital clinical staff may view derived forensic outputs
+        # (consistent with the /preview authorization rule).
+        same_hospital_staff = (
+            current_user.role in {"doctor", "radiologist", "hospital_admin"}
+            and bool(current_user.hospital_id)
+            and bool(image.hospital_id)
+            and current_user.hospital_id == image.hospital_id
+        )
+        if not same_hospital_staff:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="SRM_ANALYSIS", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for SRM residual")
 
     try:
         encrypted_bytes = load_encrypted_object(image.file_path)
@@ -1499,6 +1685,21 @@ async def get_image_integrity_evidence(
         # File cannot be decrypted (e.g. tampered or inaccessible)
         current_hash = None
         hash_match = False if image.quarantine_status else None
+
+    # Persist this real SHA-3 recompute outcome (integrity_events write path)
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="INTEGRITY_EVIDENCE_CHECK",
+        status="VERIFIED" if hash_match is True else ("MISMATCH" if hash_match is False else "UNKNOWN"),
+        details={
+            "expected_hash": image.original_hash,
+            "actual_hash": current_hash,
+            "hash_match": hash_match,
+            "context": "integrity_evidence",
+        },
+        actor_user_id=current_user.id,
+    )
 
     # 2. Digital Integrity Twin
     twin = get_digital_twin(db, image_id)
@@ -1780,6 +1981,19 @@ async def get_image_integrity_evidence(
         trust_score = trust_calc["cybersecurity_trust_score"]
         trust_breakdown = trust_calc
 
+        # Persist the freshly computed real values so later reads report the
+        # same scores (dedupe keeps unchanged images from spamming the log).
+        record_tamper_risk_log(
+            db=db,
+            image=image,
+            user_id=current_user.id,
+            risk_breakdown=risk_breakdown,
+            trust_breakdown=trust_breakdown,
+            access_decision=ACTION_QUARANTINE if is_tampered_state else (
+                ACTION_ALLOW if trust_score >= 50 else ACTION_QUARANTINE
+            ),
+        )
+
     risk_and_trust_dict = {
         "risk_score": risk_score,
         "risk_category": risk_breakdown.get("category", "LOW") if risk_breakdown else "LOW",
@@ -1870,5 +2084,122 @@ async def get_image_integrity_evidence(
         "forensic_report": forensic_report_dict,
 
         "audit_events": audit_events
+    }
+
+
+@router.get("/{image_id}/risk-trust")
+async def get_image_risk_trust(
+    image_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Returns the REAL tamper-risk and cybersecurity-trust scores for a single
+    image. Prefers the latest persisted TamperRiskLog; otherwise runs the same
+    risk/trust computation the forensic pipeline uses against the image's live
+    integrity state. No fabricated scores are ever returned.
+    """
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+
+    patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    # Same authorization rule as the integrity-evidence read path
+    if current_user.role == "patient":
+        if patient.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access Denied: You do not own this medical image"
+            )
+    elif current_user.role == "super_admin":
+        pass
+    else:  # doctor, radiologist, hospital_admin
+        if current_user.hospital_id and image.hospital_id and current_user.hospital_id == image.hospital_id:
+            pass
+        else:
+            try:
+                authorize_image_action(db, current_user, image, "view", purpose="RISK_TRUST_SCORE", request=request)
+            except HTTPException:
+                if not blockchain_service.check_smart_contract_permission(
+                    db, image.patient_id, current_user.id, current_user.hospital_id or 0
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Access Denied: View permission or active patient consent required"
+                    )
+
+    # Live integrity state (real SHA-3 recompute against the trusted hash)
+    hash_match = None
+    try:
+        encrypted_bytes = load_encrypted_object(image.file_path)
+        decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
+        hash_match = sha3_hash(decrypted_bytes) == image.original_hash
+    except Exception:
+        hash_match = False if image.quarantine_status else None
+
+    tamper_detected = bool(image.quarantine_status or hash_match is False)
+
+    latest_risk_log = db.query(TamperRiskLog).filter(
+        TamperRiskLog.image_id == image.id
+    ).order_by(TamperRiskLog.timestamp.desc()).first()
+
+    if latest_risk_log:
+        return {
+            "risk_score": latest_risk_log.risk_score,
+            "trust_score": latest_risk_log.trust_score,
+            "tamper_detected": tamper_detected,
+            "source": "persisted",
+        }
+
+    # No persisted evaluation for this image: compute it from the real state.
+    report = db.query(Report).filter(Report.image_id == image.id).order_by(Report.id.desc()).first()
+    latest_recovery = db.query(RecoveryRecord).filter(
+        RecoveryRecord.image_id == image.id
+    ).order_by(RecoveryRecord.id.desc()).first()
+    is_recovered = bool(latest_recovery and latest_recovery.verification_passed)
+
+    has_chain_record = False
+    for (payload_str,) in db.query(BlockchainTransaction.payload).filter(
+        BlockchainTransaction.payload.like('%"image_id":%')
+    ).all():
+        try:
+            payload = json.loads(payload_str)
+        except Exception:
+            continue
+        data_block = payload.get("data", payload)
+        tx_img_id = payload.get("image_id") or (
+            data_block.get("image_id") if isinstance(data_block, dict) else None
+        )
+        if tx_img_id == image.id:
+            has_chain_record = True
+            break
+
+    risk_calc = calculate_tamper_risk_score(
+        ai_confidence=(report.confidence_score if report else 0.0) or 0.0,
+        tampered_pixel_pct=(report.tampered_percentage if report else 0.0) or 0.0,
+        sha3_mismatch=tamper_detected and not is_recovered,
+        provenance_failed=False,
+        blockchain_mismatch=tamper_detected and not is_recovered,
+    )
+    risk_score = risk_calc["total_tamper_risk_score"]
+
+    trust_calc = calculate_cybersecurity_trust_score(
+        integrity_verified=(not tamper_detected) or is_recovered,
+        blockchain_verified=has_chain_record,
+        access_valid=True,
+        risk_score=risk_score,
+        is_quarantined=image.quarantine_status,
+        is_recovered=is_recovered,
+    )
+
+    return {
+        "risk_score": risk_score,
+        "trust_score": trust_calc["cybersecurity_trust_score"],
+        "tamper_detected": tamper_detected,
+        "source": "computed",
     }
 

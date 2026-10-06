@@ -52,6 +52,22 @@ def run_ai_tamper_localization(image_id: int, output_filename: str):
             db.close()
         res = run_ai_tamper_pipeline(image_bytes, output_filename)
         logger.info(f"Tamper localization completed: {res['tampered_percentage']}% tampered, confidence: {res['confidence_score']}")
+        # Persist the real inference (ai_inferences write path) against the
+        # image version so forensics survive beyond the Celery return value.
+        try:
+            from app.database import SessionLocal
+            from app.models import MedicalImage
+            from app.versioning import record_ai_inference
+
+            persist_db = SessionLocal()
+            try:
+                persist_image = persist_db.get(MedicalImage, image_id)
+                if persist_image:
+                    record_ai_inference(persist_db, persist_image, res)
+            finally:
+                persist_db.close()
+        except Exception as persist_err:
+            logger.error(f"Failed to persist AI inference for image {image_id}: {persist_err}")
         return {
             "status": "SUCCESS",
             "tampered_percentage": res["tampered_percentage"],

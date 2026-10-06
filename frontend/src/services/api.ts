@@ -46,7 +46,17 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
+    // A 401 from the logout endpoint itself is expected (session already
+    // revoked/expired) and must NOT re-trigger eviction — otherwise
+    // logout → 401 → clear + dispatch → logout becomes an infinite loop
+    // that wipes any newly established session (e.g. patient logout,
+    // then doctor login).
+    const failedUrl = String(error.config?.url || "");
+    if (
+      error.response &&
+      error.response.status === 401 &&
+      !failedUrl.includes("/auth/logout")
+    ) {
       clearAuthSession();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("auth:unauthorized"));
@@ -167,6 +177,32 @@ export const apiService = {
   async getIntegrityEvidence(imageId: number) {
     const res = await apiClient.get(`/api/images/${imageId}/integrity-evidence`);
     return res.data;
+  },
+
+  /**
+   * Real risk/trust assessment for a single image.
+   * Prefers the dedicated GET /api/images/{id}/risk-trust endpoint
+   * ({risk_score, trust_score, tamper_detected, source}) and returns null when
+   * it cannot be reached (404 / error) so callers can fall back to the
+   * persisted scores on the integrity-evidence bundle. A null score coming
+   * back from the endpoint means "no assessment on record" and is preserved
+   * as-is — never replaced with a fabricated number.
+   */
+  async getImageRiskTrust(imageId: number): Promise<{
+    risk_score?: number | null;
+    trust_score?: number | null;
+    tamper_detected?: boolean;
+    source?: string;
+  } | null> {
+    try {
+      const res = await apiClient.get(`/api/images/${imageId}/risk-trust`);
+      const data = res.data;
+      if (data && typeof data === "object") return data;
+      return null;
+    } catch {
+      // Endpoint unavailable — caller falls back to integrity evidence.
+      return null;
+    }
   },
 
   async recoverImage(imageId: number) {

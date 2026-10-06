@@ -332,8 +332,10 @@ from typing import Optional, Literal
 
 
 class DoctorRegistrationRequest(BaseModel):
-    """Doctor registration request with identity validation."""
-    identity_id: str = Field(..., description="Doctor ID (format: DR-XXXXXX)")
+    """Doctor registration request. Identity verification is OPTIONAL:
+    when omitted the account is still created with the server-assigned role,
+    and registry validation is skipped. When provided it must be valid."""
+    identity_id: Optional[str] = Field(None, description="Optional Doctor ID (format: DR-XXXXXX)")
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
     password: str = Field(min_length=12, max_length=256)
@@ -343,14 +345,16 @@ class DoctorRegistrationRequest(BaseModel):
 
     @validator('identity_id')
     def validate_format(cls, v):
-        if not ID_PATTERNS[RoleIdentityType.DOCTOR].match(v):
+        if v and not ID_PATTERNS[RoleIdentityType.DOCTOR].match(v):
             raise ValueError(f"Doctor ID must match format: {ID_FORMAT_DESCRIPTIONS[RoleIdentityType.DOCTOR]}")
         return v
 
 
 class PatientRegistrationRequest(BaseModel):
-    """Patient registration request with identity validation."""
-    identity_id: str = Field(..., description="Patient ID (format: PT-XXXXXX)")
+    """Patient registration request. Identity verification is OPTIONAL:
+    when omitted the account is still created with the server-assigned role,
+    and registry validation is skipped. When provided it must be valid."""
+    identity_id: Optional[str] = Field(None, description="Optional Patient ID (format: PT-XXXXXX)")
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
     password: str = Field(min_length=12, max_length=256)
@@ -360,14 +364,16 @@ class PatientRegistrationRequest(BaseModel):
 
     @validator('identity_id')
     def validate_format(cls, v):
-        if not ID_PATTERNS[RoleIdentityType.PATIENT].match(v):
+        if v and not ID_PATTERNS[RoleIdentityType.PATIENT].match(v):
             raise ValueError(f"Patient ID must match format: {ID_FORMAT_DESCRIPTIONS[RoleIdentityType.PATIENT]}")
         return v
 
 
 class ResearcherRegistrationRequest(BaseModel):
-    """Researcher registration request with identity validation."""
-    identity_id: str = Field(..., description="Researcher ID (format: RES-XXXXXX)")
+    """Researcher registration request. Identity verification is OPTIONAL:
+    when omitted the account is still created with the server-assigned role,
+    and registry validation is skipped. When provided it must be valid."""
+    identity_id: Optional[str] = Field(None, description="Optional Researcher ID (format: RES-XXXXXX)")
     username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
     password: str = Field(min_length=12, max_length=256)
@@ -376,7 +382,7 @@ class ResearcherRegistrationRequest(BaseModel):
 
     @validator('identity_id')
     def validate_format(cls, v):
-        if not ID_PATTERNS[RoleIdentityType.RESEARCHER].match(v):
+        if v and not ID_PATTERNS[RoleIdentityType.RESEARCHER].match(v):
             raise ValueError(f"Researcher ID must match format: {ID_FORMAT_DESCRIPTIONS[RoleIdentityType.RESEARCHER]}")
         return v
 

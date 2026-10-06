@@ -68,8 +68,25 @@ export const StatusPill: React.FC<StatusPillProps> = ({
 
   const styles = getStyles();
 
+  // Plain-language legend for status pills (Plerdy UX report).
+  const statusTips: Record<string, string> = {
+    "SHA-3 Valid": "SHA-3 Valid: content hash matches the anchored ledger value",
+    "Tamper Detected": "Tamper Detected: integrity check flagged this study",
+    "Ready for Sign-off": "Ready for Sign-off: awaiting radiologist sign-off",
+    "Suspected Tampering": "Suspected Tampering: integrity check flagged this study",
+    "Tamper Flagged": "Tamper Flagged: study is quarantined pending forensic review",
+    "Trust Index": "Trust Index: composite confidence score (0-100)",
+    "Twin Anchor ID": "Twin Anchor ID: blockchain anchor reference for this study",
+    "Flagged for Inspection": "Flagged for Inspection: queued for radiologist review",
+    "Assigned for Sign-off": "Assigned for Sign-off: awaiting radiologist sign-off",
+  };
+  const tip =
+    statusTips[label] ||
+    `${label.trim()}: current integrity status of this study`;
+
   return (
     <span
+      title={tip}
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-label-sm text-xs font-semibold tracking-wide ${styles.container} ${className}`}
     >
       {pulse ? (

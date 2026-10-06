@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { AlertOctagon, Download, ShieldCheck, Crosshair, RefreshCw, CheckCircle2, Lock, Loader2, AlertTriangle } from "lucide-react";
-import { apiService, fetchProtectedBlobUrl } from "../services/api";
+import { apiService, apiClient, fetchProtectedBlobUrl } from "../services/api";
 
 interface BoundingBox {
   x: number;
@@ -27,6 +27,30 @@ interface TamperViewerProps {
   onClose: () => void;
 }
 
+// Derive the real image id from the backend heatmap filename convention
+// (heatmap_img_{id}.png — same parsing the backend heatmap route performs)
+// when the caller does not pass imageId explicitly.
+function deriveImageId(explicitId?: number, heatmapFilename?: string): number | null {
+  if (explicitId !== undefined && explicitId !== null) return explicitId;
+  if (heatmapFilename) {
+    const m = heatmapFilename.match(/heatmap_img_(\d+)\./);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
+type MediaStatus = "loading" | "ok" | "error";
+
+interface IntegrityEvidenceLite {
+  risk_score?: number | null;
+  trust_score?: number | null;
+  risk_and_trust?: { risk_category?: string | null; trust_level?: string | null } | null;
+  affected_regions?: BoundingBox[] | null;
+  ai_forensics?: { bounding_boxes?: BoundingBox[] | null } | null;
+  tamper_percentage?: number | null;
+  ai_confidence?: number | null;
+}
+
 export default function TamperViewer({
   imageTitle,
   heatmapFilename,
@@ -34,14 +58,15 @@ export default function TamperViewer({
   confidenceScore,
   boundingBoxes,
   reportId,
-  imageId = 1,
-  tamperRiskScore = 85.5,
-  riskCategory = "HIGH",
-  cybersecurityTrustScore = 32.0,
-  trustLevel = "CRITICAL",
+  imageId,
+  tamperRiskScore,
+  riskCategory,
+  cybersecurityTrustScore,
+  trustLevel,
   onDownloadReport,
   onClose
 }: TamperViewerProps) {
+  const effectiveImageId = deriveImageId(imageId, heatmapFilename);
   const [activeTab, setActiveTab] = useState<"gradcam" | "srm">("gradcam");
   const [recovering, setRecovering] = useState(false);
   const [recoveryResult, setRecoveryResult] = useState<any>(null);
@@ -49,28 +74,66 @@ export default function TamperViewer({
   const [heatmapBlobUrl, setHeatmapBlobUrl] = useState<string | null>(null);
   const [srmBlobUrl, setSrmBlobUrl] = useState<string | null>(null);
   const [loadingMedia, setLoadingMedia] = useState<boolean>(true);
-  const [mediaError, setMediaError] = useState<string | null>(null);
+  const [heatmapStatus, setHeatmapStatus] = useState<MediaStatus>("loading");
+  const [srmStatus, setSrmStatus] = useState<MediaStatus>("loading");
+  const [evidence, setEvidence] = useState<IntegrityEvidenceLite | null>(null);
+  const [evidenceStatus, setEvidenceStatus] = useState<MediaStatus>("loading");
 
   useEffect(() => {
     let active = true;
     setLoadingMedia(true);
-    setMediaError(null);
+    setHeatmapStatus("loading");
+    setSrmStatus("loading");
 
     async function loadForensicMedia() {
-      try {
-        const hUrl = heatmapFilename 
-          ? `/api/images/heatmap/${heatmapFilename}` 
-          : `/api/images/heatmap/by-image/${imageId}`;
-        const hBlob = await fetchProtectedBlobUrl(hUrl);
-        if (active) setHeatmapBlobUrl(hBlob);
-
-        const sBlob = await fetchProtectedBlobUrl(`/api/images/srm-residual/${imageId}`);
-        if (active) setSrmBlobUrl(sBlob);
-      } catch (err: any) {
-        if (active) setMediaError(err.message || "Failed to load forensic imagery");
-      } finally {
-        if (active) setLoadingMedia(false);
+      // Heatmap / Grad-CAM artifact — real backend endpoint. When the heatmap
+      // filename is known the backend route resolves it to the same artifact
+      // produced by the AI pipeline (Grad-CAM JET overlay written as
+      // heatmap_img_{id}.png); otherwise fall back to lookup by image id.
+      const hUrl = heatmapFilename
+        ? `/api/images/heatmap/${heatmapFilename}`
+        : effectiveImageId !== null
+          ? `/api/images/heatmap/by-image/${effectiveImageId}`
+          : null;
+      if (hUrl) {
+        try {
+          const hBlob = await fetchProtectedBlobUrl(hUrl);
+          if (active) { setHeatmapBlobUrl(hBlob); setHeatmapStatus("ok"); }
+        } catch {
+          if (active) { setHeatmapBlobUrl(null); setHeatmapStatus("error"); }
+        }
+      } else if (active) {
+        setHeatmapBlobUrl(null);
+        setHeatmapStatus("error");
       }
+
+      if (effectiveImageId !== null) {
+        try {
+          const sBlob = await fetchProtectedBlobUrl(`/api/images/srm-residual/${effectiveImageId}`);
+          if (active) { setSrmBlobUrl(sBlob); setSrmStatus("ok"); }
+        } catch {
+          if (active) { setSrmBlobUrl(null); setSrmStatus("error"); }
+        }
+      } else if (active) {
+        setSrmBlobUrl(null);
+        setSrmStatus("error");
+      }
+
+      if (active) setLoadingMedia(false);
+    }
+
+    // Real integrity evidence for risk/trust scores + region data. When the
+    // endpoint is unreachable or returns no region data the UI shows
+    // "Not available" — no fabricated scores.
+    if (effectiveImageId !== null) {
+      setEvidenceStatus("loading");
+      apiClient
+        .get(`/api/images/${effectiveImageId}/integrity-evidence`)
+        .then((res) => { if (active) { setEvidence(res.data); setEvidenceStatus("ok"); } })
+        .catch(() => { if (active) { setEvidence(null); setEvidenceStatus("error"); } });
+    } else {
+      setEvidence(null);
+      setEvidenceStatus("error");
     }
 
     loadForensicMedia();
@@ -80,12 +143,17 @@ export default function TamperViewer({
       if (heatmapBlobUrl) URL.revokeObjectURL(heatmapBlobUrl);
       if (srmBlobUrl) URL.revokeObjectURL(srmBlobUrl);
     };
-  }, [heatmapFilename, imageId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heatmapFilename, effectiveImageId]);
 
   const handleExecuteSelfRecovery = async () => {
+    if (effectiveImageId === null) {
+      alert("Self-recovery unavailable: image ID could not be resolved for this record.");
+      return;
+    }
     setRecovering(true);
     try {
-      const data = await apiService.recoverImage(imageId);
+      const data = await apiService.recoverImage(effectiveImageId);
       setRecoveryResult(data);
     } catch (e: any) {
       const msg = e.response?.data?.detail || e.message || "Self-recovery failed";
@@ -94,6 +162,26 @@ export default function TamperViewer({
       setRecovering(false);
     }
   };
+
+  // Risk / trust values: caller-provided props win; otherwise use real
+  // integrity-evidence values; otherwise "Not available" (no static defaults).
+  const resolvedRiskScore = tamperRiskScore ?? evidence?.risk_score ?? null;
+  const resolvedRiskCategory = riskCategory ?? evidence?.risk_and_trust?.risk_category ?? null;
+  const resolvedTrustScore = cybersecurityTrustScore ?? evidence?.trust_score ?? null;
+  const resolvedTrustLevel = trustLevel ?? evidence?.risk_and_trust?.trust_level ?? null;
+
+  // Real region data: caller boundingBoxes (from backend tamper pathway) first,
+  // then integrity-evidence affected_regions / ai_forensics.bounding_boxes.
+  const evidenceRegions: BoundingBox[] | null =
+    evidenceStatus === "ok" && evidence
+      ? (Array.isArray(evidence.affected_regions) && evidence.affected_regions.length > 0
+          ? evidence.affected_regions
+          : Array.isArray(evidence.ai_forensics?.bounding_boxes) && (evidence.ai_forensics?.bounding_boxes?.length ?? 0) > 0
+            ? evidence.ai_forensics!.bounding_boxes!
+            : null)
+      : null;
+  const regionList: BoundingBox[] =
+    boundingBoxes && boundingBoxes.length > 0 ? boundingBoxes : (evidenceRegions ?? []);
 
   return (
     <div className="glass-panel p-6 border-rose-900/40 glow-rose max-w-5xl mx-auto space-y-6 text-left">
@@ -126,30 +214,52 @@ export default function TamperViewer({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
           <div className="text-[10px] text-slate-400 font-bold uppercase">Tamper Risk Score</div>
-          <div className="text-2xl font-black text-rose-500 mt-0.5">{tamperRiskScore} / 100</div>
-          <div className="text-[9px] text-rose-400 font-semibold mt-0.5">Category: {riskCategory}</div>
+          <div className="text-2xl font-black text-rose-500 mt-0.5">
+            {resolvedRiskScore !== null && resolvedRiskScore !== undefined ? `${resolvedRiskScore} / 100` : "Not available"}
+          </div>
+          <div className="text-[9px] text-rose-400 font-semibold mt-0.5">
+            Category: {resolvedRiskCategory ?? "Not available"}
+          </div>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
           <div className="text-[10px] text-slate-400 font-bold uppercase">Cybersecurity Trust Score</div>
-          <div className="text-2xl font-black text-amber-400 mt-0.5">{cybersecurityTrustScore} / 100</div>
-          <div className="text-[9px] text-amber-300 font-semibold mt-0.5">Trust Level: {trustLevel}</div>
+          <div className="text-2xl font-black text-amber-400 mt-0.5">
+            {resolvedTrustScore !== null && resolvedTrustScore !== undefined ? `${resolvedTrustScore} / 100` : "Not available"}
+          </div>
+          <div className="text-[9px] text-amber-300 font-semibold mt-0.5">
+            Trust Level: {resolvedTrustLevel ?? "Not available"}
+          </div>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
           <div className="text-[10px] text-slate-400 font-bold uppercase">Risk-Adaptive Action</div>
           <div className="text-sm font-bold text-rose-400 mt-1 flex items-center gap-1.5">
-            <Lock className="h-4 w-4" /> QUARANTINE
+            <Lock className="h-4 w-4" />
+            {evidenceStatus === "ok" && evidence?.risk_and_trust?.access_decision
+              ? (evidence.risk_and_trust.access_decision === "ACTION_ALLOW" ? "ALLOW" : "QUARANTINE")
+              : "QUARANTINE"}
           </div>
-          <div className="text-[9px] text-slate-400 mt-0.5">Restricted Access Policy</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            {evidenceStatus === "ok" && evidence?.risk_and_trust?.access_decision
+              ? `From integrity-evidence: ${evidence.risk_and_trust.access_decision}`
+              : "Restricted Access Policy (tamper pathway active)"}
+          </div>
         </div>
 
         <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
           <div className="text-[10px] text-slate-400 font-bold uppercase">Digital Integrity Twin</div>
           <div className="text-sm font-bold text-blue-400 mt-1 flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4" /> Off-Chain Twin Active
+            <ShieldCheck className="h-4 w-4" />
+            {evidenceStatus === "ok"
+              ? (evidence?.risk_and_trust || evidence ? "Twin Evidence Loaded" : "Not available")
+              : "Not available"}
           </div>
-          <div className="text-[9px] text-slate-400 mt-0.5">Storage Trusted Backup Ready</div>
+          <div className="text-[9px] text-slate-400 mt-0.5">
+            {evidenceStatus === "ok"
+              ? "Per-image twin state from integrity-evidence"
+              : "Integrity-evidence endpoint unreachable"}
+          </div>
         </div>
       </div>
 
@@ -164,7 +274,7 @@ export default function TamperViewer({
                   onClick={() => setActiveTab("gradcam")}
                   className={`px-2.5 py-1 rounded-lg transition-all ${activeTab === "gradcam" ? "bg-rose-600 text-white" : "text-slate-400 hover:text-slate-200"}`}
                 >
-                  Grad-CAM
+                  Heatmap / Grad-CAM
                 </button>
                 <button
                   onClick={() => setActiveTab("srm")}
@@ -175,8 +285,22 @@ export default function TamperViewer({
               </div>
             </div>
             <h4 className="text-xs font-semibold text-slate-300 mt-1">
-              {activeTab === "gradcam" ? "Grad-CAM Attribution Overlay" : "Spatial Rich Model (SRM) Noise Residual Stream"}
+              {activeTab === "gradcam"
+                ? "Grad-CAM Attribution Overlay (served via heatmap endpoint)"
+                : "Spatial Rich Model (SRM) Noise Residual Stream"}
             </h4>
+            {/* Real availability derived from per-endpoint fetch outcomes */}
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${heatmapStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : heatmapStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                Heatmap: {heatmapStatus === "ok" ? "Available" : heatmapStatus === "error" ? "Not available" : "Loading…"}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${heatmapStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : heatmapStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                Grad-CAM: {heatmapStatus === "ok" ? "Available" : heatmapStatus === "error" ? "Not available" : "Loading…"}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${srmStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : srmStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                SRM: {srmStatus === "ok" ? "Available" : srmStatus === "error" ? "Not available" : "Loading…"}
+              </span>
+            </div>
           </div>
 
           <div className="relative border border-slate-800 rounded-xl bg-slate-950 aspect-square overflow-hidden flex items-center justify-center">
@@ -185,21 +309,19 @@ export default function TamperViewer({
                 <Loader2 className="h-6 w-6 animate-spin text-rose-500" />
                 <span className="text-[10px] font-semibold">Loading forensic media...</span>
               </div>
-            ) : mediaError ? (
-              <div className="p-4 text-center text-rose-400 space-y-2">
-                <AlertTriangle className="h-6 w-6 mx-auto text-rose-500" />
-                <div className="text-xs font-bold">Failed to load media</div>
-                <div className="text-[10px] text-slate-400">{mediaError}</div>
-              </div>
             ) : activeTab === "gradcam" ? (
               heatmapBlobUrl ? (
                 <img
                   src={heatmapBlobUrl}
-                  alt="AI Tamper Heatmap Overlay"
+                  alt="AI Tamper Heatmap / Grad-CAM Overlay"
                   className="object-contain max-h-full max-w-full"
                 />
               ) : (
-                <span className="text-xs text-slate-500 italic">Heatmap unavailable</span>
+                <div className="p-4 text-center text-slate-400 space-y-1">
+                  <AlertTriangle className="h-6 w-6 mx-auto text-slate-500" />
+                  <div className="text-xs font-bold">Not available</div>
+                  <div className="text-[10px] text-slate-500">Heatmap / Grad-CAM artifact missing for this image</div>
+                </div>
               )
             ) : srmBlobUrl ? (
               <img
@@ -208,12 +330,16 @@ export default function TamperViewer({
                 className="object-contain max-h-full max-w-full"
               />
             ) : (
-              <span className="text-xs text-slate-500 italic">SRM residual stream unavailable</span>
+              <div className="p-4 text-center text-slate-400 space-y-1">
+                <AlertTriangle className="h-6 w-6 mx-auto text-slate-500" />
+                <div className="text-xs font-bold">Not available</div>
+                <div className="text-[10px] text-slate-500">SRM residual artifact missing for this image</div>
+              </div>
             )}
           </div>
           <div className="text-[10px] text-slate-500 text-center italic">
             {activeTab === "gradcam"
-              ? "Colormap representation: High probability modifications are mapped in red."
+              ? "Backend Grad-CAM overlay: JET colormap of model attribution — red indicates high modification probability."
               : "SRM Noise Residual: High-frequency noise inconsistencies reveal altered ROI boundaries."}
           </div>
         </div>
@@ -240,14 +366,14 @@ export default function TamperViewer({
               </div>
             </div>
 
-            {/* Bounding Box coordinates details */}
+            {/* Bounding Box coordinates details — TAMPER LOCATION evidence */}
             <div className="space-y-2">
               <span className="text-[10px] text-slate-500 font-bold uppercase flex items-center gap-1">
-                <Crosshair className="h-3.5 w-3.5 text-slate-400" /> Bounding Box Coordinates (scaled)
+                <Crosshair className="h-3.5 w-3.5 text-slate-400" /> TAMPER LOCATION — Detected Suspicious Regions
               </span>
               <div className="bg-slate-950 border border-slate-900 rounded-xl p-3 max-h-28 overflow-y-auto font-mono text-[10px] leading-relaxed text-slate-400">
-                {boundingBoxes && boundingBoxes.length > 0 ? (
-                  boundingBoxes.map((box, index) => (
+                {regionList.length > 0 ? (
+                  regionList.map((box, index) => (
                     <div key={index} className="flex justify-between py-1 border-b border-slate-900/50 last:border-b-0">
                       <span className="text-rose-400 font-bold">Region #{index + 1}:</span>
                       <span>X: {box.x}, Y: {box.y} [W: {box.width}, H: {box.height}]</span>
@@ -255,9 +381,24 @@ export default function TamperViewer({
                   ))
                 ) : (
                   <div className="text-slate-500 italic text-center py-2">
-                    No discrete coordinates detected (diffuse pixel modification)
+                    {evidenceStatus === "loading"
+                      ? "Loading region evidence…"
+                      : evidenceStatus === "error"
+                        ? "Not available — integrity-evidence endpoint unreachable"
+                        : "Not available — backend returned no region data for this image"}
                   </div>
                 )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${heatmapStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : heatmapStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                  Heatmap: {heatmapStatus === "ok" ? "Available" : heatmapStatus === "error" ? "Not available" : "Loading…"}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${heatmapStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : heatmapStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                  Grad-CAM: {heatmapStatus === "ok" ? "Available" : heatmapStatus === "error" ? "Not available" : "Loading…"}
+                </span>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${srmStatus === "ok" ? "bg-emerald-900/60 text-emerald-300" : srmStatus === "error" ? "bg-rose-900/60 text-rose-300" : "bg-slate-800 text-slate-400"}`}>
+                  SRM: {srmStatus === "ok" ? "Available" : srmStatus === "error" ? "Not available" : "Loading…"}
+                </span>
               </div>
             </div>
 

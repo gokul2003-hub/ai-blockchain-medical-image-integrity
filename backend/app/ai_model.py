@@ -1050,6 +1050,15 @@ def run_ai_tamper_pipeline(
     heatmap_path = heatmap_dir / safe_filename
     cv2.imwrite(str(heatmap_path), overlay)
 
+    # Persist the Swin-UNet binary localization mask alongside the overlay so
+    # the UI can render the raw model segmentation output (existing inference,
+    # no new model or algorithm).
+    mask_filename = safe_filename.replace("heatmap_img_", "mask_img_")
+    if mask_filename == safe_filename:
+        mask_filename = f"mask_{safe_filename}"
+    mask_path = heatmap_dir / mask_filename
+    cv2.imwrite(str(mask_path), ((binary_mask_orig > 0).astype(np.uint8)) * 255)
+
     provenance = get_model_provenance(device=device)
 
     return {
@@ -1061,6 +1070,8 @@ def run_ai_tamper_pipeline(
         "regions": regions,
         "heatmap_path": str(heatmap_path.resolve()),
         "heatmap_filename": safe_filename,
+        "mask_path": str(mask_path.resolve()),
+        "mask_filename": mask_filename,
         "original_dimensions": [int(orig_w), int(orig_h)],
         "model_input_dimensions": list(AI_IMAGE_SIZE),
         "model_provenance": provenance,

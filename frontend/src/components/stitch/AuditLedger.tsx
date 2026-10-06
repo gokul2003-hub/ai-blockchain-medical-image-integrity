@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { apiClient } from "../../services/api";
 
 export interface BlockchainBlockItem {
   id?: number;
@@ -30,6 +31,38 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBlock, setSelectedBlock] = useState<BlockchainBlockItem | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // GET /api/audit/logs is admin-guarded on the backend — only offer the export
+  // action to admin roles so non-admin viewers never hit a 403.
+  const isAdminUser = ["admin", "super_admin", "hospital_admin"].includes(
+    (localStorage.getItem("med_role") || "").toLowerCase()
+  );
+
+  // Reuses the existing GET /api/audit/logs route (same endpoint apiService.getAuditLogs()
+  // calls) and the existing apiClient pattern, which attaches the Bearer token automatically.
+  const handleExportAuditReport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const response = await apiClient.get("/api/audit/logs", {
+        responseType: "blob",
+      });
+      const blob = new Blob([response.data], { type: "application/json" });
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `MediSecure_Audit_Report_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error("Audit report export failed", err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const filteredBlocks = blocks.filter((b) => {
     const q = searchTerm.toLowerCase();
@@ -80,6 +113,19 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
               title="Refresh ledger"
             >
               <span className="material-symbols-outlined text-base">refresh</span>
+            </button>
+          )}
+          {isAdminUser && (
+            <button
+              onClick={handleExportAuditReport}
+              disabled={exporting}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-xs font-semibold hover:bg-primary-container transition-colors disabled:opacity-60"
+              title="Export Audit Report"
+            >
+              <span className="material-symbols-outlined text-base">
+                {exporting ? "hourglass_top" : "download"}
+              </span>
+              {exporting ? "Exporting..." : "Export Audit Report"}
             </button>
           )}
         </div>

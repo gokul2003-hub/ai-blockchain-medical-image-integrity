@@ -287,10 +287,12 @@ async def register_doctor(
     """
     logger.info(f"Doctor registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
 
-    # Verify identity against registry
+    # Identity verification is OPTIONAL: skipped entirely when no ID is supplied.
+    # When an ID IS supplied it is still strictly validated against the registry.
     registry = IdentityRegistryService(db)
-    validation = registry.validate_doctor_id(reg_in.identity_id)
-    if not validation.success:
+    identity_provided = bool(reg_in.identity_id)
+    validation = registry.validate_doctor_id(reg_in.identity_id) if identity_provided else None
+    if validation is not None and not validation.success:
         logger.warning(f"Doctor registration rejected: {validation.message} (ID: {reg_in.identity_id})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -328,12 +330,12 @@ async def register_doctor(
     # Initialize security state
     get_security_state(db, db_user)
 
-    # Create doctor profile
-    doctor_profile = validation.identity_record
+    # Create doctor profile (registry record is only available when identity was verified)
+    doctor_profile = validation.identity_record if validation else None
     doc_prof = DoctorProfile(
         user_id=db_user.id,
-        specialization=reg_in.specialization or doctor_profile.specialization or "Radiology & Medical Imaging",
-        license_number=reg_in.license_number or doctor_profile.license_number or f"LIC-{db_user.id:04d}"
+        specialization=reg_in.specialization or (doctor_profile.specialization if doctor_profile else None) or "Radiology & Medical Imaging",
+        license_number=reg_in.license_number or (doctor_profile.license_number if doctor_profile else None) or f"LIC-{db_user.id:04d}"
     )
     db.add(doc_prof)
 
@@ -348,8 +350,9 @@ async def register_doctor(
             detail="Account could not be provisioned with a decentralized identity. Please retry."
         )
 
-    # Mark identity as registered
-    registry.register_identity("doctor", reg_in.identity_id, db_user)
+    # Mark identity as registered (only when a verified ID was supplied)
+    if identity_provided:
+        registry.register_identity("doctor", reg_in.identity_id, db_user)
 
     # Audit log
     audit = AuditLog(
@@ -358,7 +361,8 @@ async def register_doctor(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         status="SUCCESS",
-        details=f"Doctor {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        details=f"Doctor {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}" if identity_provided
+                else f"Doctor {db_user.username} registered without identity verification (optional); actor_did={db_user.did}",
         timestamp=datetime.now(timezone.utc)
     )
     db.add(audit)
@@ -381,10 +385,12 @@ async def register_patient(
     """
     logger.info(f"Patient registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
 
-    # Verify identity against registry
+    # Identity verification is OPTIONAL: skipped entirely when no ID is supplied.
+    # When an ID IS supplied it is still strictly validated against the registry.
     registry = IdentityRegistryService(db)
-    validation = registry.validate_patient_id(reg_in.identity_id)
-    if not validation.success:
+    identity_provided = bool(reg_in.identity_id)
+    validation = registry.validate_patient_id(reg_in.identity_id) if identity_provided else None
+    if validation is not None and not validation.success:
         logger.warning(f"Patient registration rejected: {validation.message} (ID: {reg_in.identity_id})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -422,13 +428,13 @@ async def register_patient(
     # Initialize security state
     get_security_state(db, db_user)
 
-    # Create patient profile
-    patient_profile = validation.identity_record
+    # Create patient profile (registry record is only available when identity was verified)
+    patient_profile = validation.identity_record if validation else None
     prof = PatientProfile(
         user_id=db_user.id,
-        date_of_birth=reg_in.date_of_birth or patient_profile.date_of_birth or "2000-01-01",
-        gender=reg_in.gender or patient_profile.gender or "Unspecified",
-        blood_group=reg_in.blood_group or patient_profile.blood_group or "O Positive"
+        date_of_birth=reg_in.date_of_birth or (patient_profile.date_of_birth if patient_profile else None) or "2000-01-01",
+        gender=reg_in.gender or (patient_profile.gender if patient_profile else None) or "Unspecified",
+        blood_group=reg_in.blood_group or (patient_profile.blood_group if patient_profile else None) or "O Positive"
     )
     db.add(prof)
 
@@ -443,8 +449,9 @@ async def register_patient(
             detail="Account could not be provisioned with a decentralized identity. Please retry."
         )
 
-    # Mark identity as registered
-    registry.register_identity("patient", reg_in.identity_id, db_user)
+    # Mark identity as registered (only when a verified ID was supplied)
+    if identity_provided:
+        registry.register_identity("patient", reg_in.identity_id, db_user)
 
     # Audit log
     audit = AuditLog(
@@ -453,7 +460,8 @@ async def register_patient(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         status="SUCCESS",
-        details=f"Patient {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        details=f"Patient {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}" if identity_provided
+                else f"Patient {db_user.username} registered without identity verification (optional); actor_did={db_user.did}",
         timestamp=datetime.now(timezone.utc)
     )
     db.add(audit)
@@ -477,10 +485,12 @@ async def register_researcher(
     """
     logger.info(f"Researcher registration attempt: identity={reg_in.identity_id}, username={reg_in.username}")
 
-    # Verify identity against registry
+    # Identity verification is OPTIONAL: skipped entirely when no ID is supplied.
+    # When an ID IS supplied it is still strictly validated against the registry.
     registry = IdentityRegistryService(db)
-    validation = registry.validate_researcher_id(reg_in.identity_id)
-    if not validation.success:
+    identity_provided = bool(reg_in.identity_id)
+    validation = registry.validate_researcher_id(reg_in.identity_id) if identity_provided else None
+    if validation is not None and not validation.success:
         logger.warning(f"Researcher registration rejected: {validation.message} (ID: {reg_in.identity_id})")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -529,8 +539,9 @@ async def register_researcher(
             detail="Account could not be provisioned with a decentralized identity. Please retry."
         )
 
-    # Mark identity as registered
-    registry.register_identity("researcher", reg_in.identity_id, db_user)
+    # Mark identity as registered (only when a verified ID was supplied)
+    if identity_provided:
+        registry.register_identity("researcher", reg_in.identity_id, db_user)
 
     # Audit log
     audit = AuditLog(
@@ -539,7 +550,8 @@ async def register_researcher(
         ip_address=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
         status="SUCCESS",
-        details=f"Researcher {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}",
+        details=f"Researcher {db_user.username} registered with verified identity {reg_in.identity_id}; actor_did={db_user.did}" if identity_provided
+                else f"Researcher {db_user.username} registered without identity verification (optional); actor_did={db_user.did}",
         timestamp=datetime.now(timezone.utc)
     )
     db.add(audit)
