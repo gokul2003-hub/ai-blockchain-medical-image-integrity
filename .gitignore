@@ -1,0 +1,20 @@
+# Local tooling (portable broker binaries) - not part of the source tree
+.tools/
+
+# Runtime secrets and data
+backend/.dev-secrets.json
+*.db
+*.db-journal
+*.bak.db
+
+# Runtime artifacts
+backend/storage/
+backend/blockchain_artifacts/
+blockchain/artifacts/
+blockchain/cache/
+# Per-run audit output of scripts/prune_orphan_ledger.py (see docs/LEDGER_COMPACTION.md)
+backend/blockchain_compaction_report.json
+**/__pycache__/
+*.pyc
+node_modules/
+*.log

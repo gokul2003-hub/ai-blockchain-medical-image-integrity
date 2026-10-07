@@ -3,12 +3,14 @@ import {
   Upload, FileImage, Users, Shield, Lock, Database,
   CheckCircle2, RefreshCw, AlertTriangle, ChevronRight, X,
 } from "lucide-react";
-import { apiClient } from "../services/api";
+import { apiClient, apiService } from "../services/api";
 import { useToast } from "../components/Toast";
 
 interface UploadImageProps {
   token: string;
   onViewChange: (view: string) => void;
+  /** Fires with the REAL fast-accept payload (image_id, job_id, status). */
+  onAccepted?: (payload: any) => void;
 }
 
 interface Patient {
@@ -19,10 +21,14 @@ interface Patient {
 
 interface UploadResult {
   id: number;
-  title: string;
-  quality_score: number;
-  entropy: number;
-  original_hash: string;
+  job_id?: string;
+  status?: string;
+  worker_queued?: boolean;
+  worker_error?: string | null;
+  trusted_hash?: string;
+  storage_provider?: string;
+  upload_accepted_ms?: number;
+  message?: string;
 }
 
 type UploadType = "standard" | "dicom";
@@ -37,7 +43,7 @@ const STEPS = [
   { id: 7, label: "Blockchain Reg.",icon: CheckCircle2 },
 ];
 
-export default function UploadImage({ token, onViewChange }: UploadImageProps) {
+export default function UploadImage({ token, onViewChange, onAccepted }: UploadImageProps) {
   const [uploadType, setUploadType] = useState<UploadType>("standard");
   const [patients, setPatients]   = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState("");
@@ -85,32 +91,34 @@ export default function UploadImage({ token, onViewChange }: UploadImageProps) {
     if (uploadType === "standard") formData.append("image_type", modality);
 
     try {
-      await simulateStep(2, 300);
-      setProgress(15);
-      await simulateStep(3, 500);
-      setProgress(30);
-      await simulateStep(4, 400);
-      setProgress(50);
-      await simulateStep(5, 300);
-      setProgress(65);
+      // FAST-ACCEPT: the backend performs validation, preprocessing, 4D Chen +
+      // AES-256-GCM, SHA-3, Digital Integrity Twin, encrypted storage and the
+      // ledger registration, then queues the expensive AI forensic work and
+      // returns immediately with real image_id / job_id.
+      setProgress(10);
+      const res = await apiService.uploadAsync(formData);
 
-      const endpoint = uploadType === "dicom" ? "/api/images/upload-dicom" : "/api/images/upload";
-      const res = await apiClient.post(endpoint, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (evt) => {
-          if (evt.total) {
-            setProgress(65 + Math.round((evt.loaded / evt.total) * 20));
-          }
-        },
-      });
-
-      setCurrentStep(6);
-      setProgress(90);
-      await simulateStep(7, 500);
+      // The backend really completed the integrity chain before returning.
       setProgress(100);
-
-      setResult(res.data);
-      success("Image Registered", `"${title}" has been encrypted, hashed, and registered on the blockchain.`);
+      for (let s = 2; s <= 7; s++) setCurrentStep(s);
+      setResult({
+        id: res.image_id,
+        job_id: res.job_id,
+        status: res.status,
+        worker_queued: res.worker_queued,
+        worker_error: res.worker_error,
+        trusted_hash: res.trusted_sha3,
+        storage_provider: res.storage_provider,
+        upload_accepted_ms: res.upload_accepted_ms,
+        message: res.message,
+      });
+      onAccepted?.(res);
+      success(
+        "Study Imported",
+        res.worker_queued
+          ? `"${title}" imported (Image #${res.image_id}). Security processing continues in the background.`
+          : `"${title}" imported (Image #${res.image_id}), but background processing was NOT queued.`
+      );
       setTitle("");
       setFile(null);
     } catch (err: any) {
@@ -329,8 +337,8 @@ export default function UploadImage({ token, onViewChange }: UploadImageProps) {
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   { label: "Image ID", value: `#${result.id}` },
-                  { label: "Quality Score", value: `${result.quality_score.toFixed(2)}` },
-                  { label: "Entropy", value: result.entropy.toFixed(4) },
+                  { label: "Job ID", value: result.job_id ? result.job_id.slice(0, 18) : "N/A" },
+                  { label: "Upload accepted", value: result.upload_accepted_ms != null ? `${result.upload_accepted_ms} ms` : "N/A" },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-slate-900/60 rounded-xl p-3">
                     <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider mb-1">{label}</div>
@@ -338,12 +346,14 @@ export default function UploadImage({ token, onViewChange }: UploadImageProps) {
                   </div>
                 ))}
                 <div className="col-span-2 sm:col-span-3 bg-slate-900/60 rounded-xl p-3">
-                  <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider mb-1">SHA-3 Hash (Trusted)</div>
-                  <div className="font-hash text-emerald-400 break-all text-[10px]">{result.original_hash}</div>
+                  <div className="text-[9px] text-slate-600 font-bold uppercase tracking-wider mb-1">Trusted SHA-3 Baseline</div>
+                  <div className="font-hash text-emerald-400 break-all text-[10px]">{result.trusted_hash || "N/A"}</div>
                 </div>
               </div>
-              <div className="mt-3 text-[10px] text-slate-500 bg-slate-950/60 rounded-lg p-2.5 border border-slate-800">
-                4D Chen hyperchaotic permutation applied → AES-256-GCM encryption → SHA-3 hash registered on blockchain ledger.
+              <div className="mt-3 text-[10px] text-slate-400 bg-slate-950/60 rounded-lg p-2.5 border border-slate-800">
+                {result.worker_queued === false
+                  ? `Study stored and integrity-registered, but background processing was NOT queued: ${result.worker_error || "worker broker unavailable"}. The study is NOT marked verified.`
+                  : "Integrity chain complete (4D Chen → AES-256-GCM → SHA-3 → Digital Integrity Twin → encrypted storage → ledger). AI forensics continue in the background worker; this study is not marked verified until they finish."}
               </div>
               <button
                 onClick={() => onViewChange("medical-images")}

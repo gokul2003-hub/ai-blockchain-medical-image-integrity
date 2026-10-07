@@ -73,7 +73,7 @@ class ChenHyperchaosPermutation:
         # Each initial condition uses 8 bytes of the digest
         self._x0 = _bytes_to_ic(digest[0:8],  0.1, 1.0)
         self._y0 = _bytes_to_ic(digest[8:16], 0.1, 1.0)
-        self._z0 = _bytes_to_ic(digest[16:24], 1.0, 10.0)
+        self._z0 = _bytes_to_ic(digest[16:16 + 8], 1.0, 10.0)
         self._w0 = _bytes_to_ic(digest[24:32], 0.1, 1.0)
 
     # ------------------------------------------------------------------
@@ -84,18 +84,125 @@ class ChenHyperchaosPermutation:
         """Run RK4 for *_WARMUP* + *steps* iterations; return the last *steps* states.
 
         Returns an (steps, 4) array where columns are [x, y, z, w].
+
+        Performance note
+        ----------------
+        The Chen system has only four state variables, so a NumPy array of
+        length 4 costs far more in per-call overhead than plain Python floats
+        (every scalar operation becomes an ndarray dispatch). This integrator
+        therefore keeps the state in local float64 scalars and inlines the RK4
+        stages instead of allocating four throwaway arrays per step.
+
+        The arithmetic is written in exactly the same order as the NumPy
+        reference implementation in ``_rk4_step`` / ``_chen_derivatives``, so
+        the produced trajectory is **bit-for-bit identical** - this is a pure
+        speed change, not a change of cipher.
         """
-        state = np.array([self._x0, self._y0, self._z0, self._w0], dtype=np.float64)
+        x = self._x0
+        y = self._y0
+        z = self._z0
+        w = self._w0
 
-        # Discard warm-up transient
+        # Pre-hoist every constant into a local: attribute/global lookups and
+        # repeated arithmetic on module globals dominate the loop otherwise.
+        A = _A
+        B = _B
+        C = _C
+        D = _D
+        dt = _DT
+        half_dt = 0.5 * dt
+        dt_over_6 = dt / 6.0
+        c_minus_a = _C - _A
+
+        # Discard warm-up transient (same recurrence as the reference).
         for _ in range(_WARMUP):
-            state = _rk4_step(state, _DT)
+            k1x = A * (y - x)
+            k1y = c_minus_a * x - x * z + C * y
+            k1z = x * y - B * z
+            k1w = x * z + D * w
 
-        # Collect *steps* states
+            s2x = x + half_dt * k1x
+            s2y = y + half_dt * k1y
+            s2z = z + half_dt * k1z
+            s2w = w + half_dt * k1w
+
+            k2x = A * (s2y - s2x)
+            k2y = c_minus_a * s2x - s2x * s2z + C * s2y
+            k2z = s2x * s2y - B * s2z
+            k2w = s2x * s2z + D * s2w
+
+            s3x = x + half_dt * k2x
+            s3y = y + half_dt * k2y
+            s3z = z + half_dt * k2z
+            s3w = w + half_dt * k2w
+
+            k3x = A * (s3y - s3x)
+            k3y = c_minus_a * s3x - s3x * s3z + C * s3y
+            k3z = s3x * s3y - B * s3z
+            k3w = s3x * s3z + D * s3w
+
+            s4x = x + dt * k3x
+            s4y = y + dt * k3y
+            s4z = z + dt * k3z
+            s4w = w + dt * k3w
+
+            k4x = A * (s4y - s4x)
+            k4y = c_minus_a * s4x - s4x * s4z + C * s4y
+            k4z = s4x * s4y - B * s4z
+            k4w = s4x * s4z + D * s4w
+
+            x = x + dt_over_6 * (k1x + 2.0 * k2x + 2.0 * k3x + k4x)
+            y = y + dt_over_6 * (k1y + 2.0 * k2y + 2.0 * k3y + k4y)
+            z = z + dt_over_6 * (k1z + 2.0 * k2z + 2.0 * k3z + k4z)
+            w = w + dt_over_6 * (k1w + 2.0 * k2w + 2.0 * k3w + k4w)
+
+        # Collect *steps* states.
         trajectory = np.empty((steps, 4), dtype=np.float64)
         for i in range(steps):
-            state = _rk4_step(state, _DT)
-            trajectory[i] = state
+            k1x = A * (y - x)
+            k1y = c_minus_a * x - x * z + C * y
+            k1z = x * y - B * z
+            k1w = x * z + D * w
+
+            s2x = x + half_dt * k1x
+            s2y = y + half_dt * k1y
+            s2z = z + half_dt * k1z
+            s2w = w + half_dt * k1w
+
+            k2x = A * (s2y - s2x)
+            k2y = c_minus_a * s2x - s2x * s2z + C * s2y
+            k2z = s2x * s2y - B * s2z
+            k2w = s2x * s2z + D * s2w
+
+            s3x = x + half_dt * k2x
+            s3y = y + half_dt * k2y
+            s3z = z + half_dt * k2z
+            s3w = w + half_dt * k2w
+
+            k3x = A * (s3y - s3x)
+            k3y = c_minus_a * s3x - s3x * s3z + C * s3y
+            k3z = s3x * s3y - B * s3z
+            k3w = s3x * s3z + D * s3w
+
+            s4x = x + dt * k3x
+            s4y = y + dt * k3y
+            s4z = z + dt * k3z
+            s4w = w + dt * k3w
+
+            k4x = A * (s4y - s4x)
+            k4y = c_minus_a * s4x - s4x * s4z + C * s4y
+            k4z = s4x * s4y - B * s4z
+            k4w = s4x * s4z + D * s4w
+
+            x = x + dt_over_6 * (k1x + 2.0 * k2x + 2.0 * k3x + k4x)
+            y = y + dt_over_6 * (k1y + 2.0 * k2y + 2.0 * k3y + k4y)
+            z = z + dt_over_6 * (k1z + 2.0 * k2z + 2.0 * k3z + k4z)
+            w = w + dt_over_6 * (k1w + 2.0 * k2w + 2.0 * k3w + k4w)
+
+            trajectory[i, 0] = x
+            trajectory[i, 1] = y
+            trajectory[i, 2] = z
+            trajectory[i, 3] = w
 
         return trajectory
 

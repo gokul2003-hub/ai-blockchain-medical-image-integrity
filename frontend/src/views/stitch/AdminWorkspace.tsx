@@ -820,14 +820,14 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                     </span>
                     <StatusPill
                       variant={inspectedUserVc?.valid ? "verified" : "tampered"}
-                      label={inspectedUserVc?.valid ? "Signature Valid" : "Verification Failed"}
+                      label={inspectedUserVc?.valid ? "VERIFIED" : "FAILED"}
                     />
                   </div>
                   <div className="text-xs text-on-surface-variant font-code-sm space-y-1">
                     <div className="flex justify-between">
                       <span>Status:</span>
                       <span className="font-semibold text-on-surface">
-                        {inspectedUserVc?.status || (inspectedUserVc?.valid ? "ACTIVE" : "INVALID")}
+                        {inspectedUserVc?.valid !== undefined ? (inspectedUserVc.valid ? "VERIFIED" : "FAILED") : (inspectedUserVc?.status || "PENDING")}
                       </span>
                     </div>
                     {inspectedUserVc?.issuer && (
@@ -846,13 +846,13 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({
                   </div>
                 </div>
 
-                {inspectedUserDid?.credential_summary && (
+                {inspectedUserDid?.credential && (
                   <div className="bg-surface-container-low p-3 rounded-lg border border-surface-container-high/40 text-xs space-y-1">
                     <span className="font-label-sm text-[10px] text-outline uppercase tracking-wider block font-semibold">
                       Role Assertion Details
                     </span>
                     <div className="p-2 bg-surface-container-lowest rounded font-mono text-[10px] text-on-surface overflow-x-auto max-h-32">
-                      <pre>{JSON.stringify(inspectedUserDid.credential_summary, null, 2)}</pre>
+                      <pre>{JSON.stringify(inspectedUserDid.credential, null, 2)}</pre>
                     </div>
                   </div>
                 )}

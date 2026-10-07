@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { apiService, fetchProtectedBlobUrl } from "../../services/api";
 import { wsService } from "../../services/websocket";
 import { MetricCard } from "../../components/stitch/MetricCard";
@@ -12,6 +12,10 @@ import { QuadViewport } from "../../components/stitch/QuadViewport";
 import { AuditLedger } from "../../components/stitch/AuditLedger";
 import { ConsentCard } from "../../components/stitch/ConsentCard";
 import { LoadingState, EmptyState, ErrorState } from "../../components/stitch/States";
+import {
+  ProcessingPipelinePanel,
+  type ProcessingJob,
+} from "../../components/stitch/ProcessingPipelinePanel";
 import { FileUploadZone } from "../../components/stitch/FileUploadZone";
 import IntegrityProof from "../IntegrityProof";
 import UploadImage from "../UploadImage";
@@ -45,6 +49,24 @@ const fmtTimestamp = (value?: string | null): string => {
 const fmtConfidence = (value?: number | null): string => {
   if (value === null || value === undefined || isNaN(value)) return "N/A";
   return `${(value <= 1 ? value * 100 : value).toFixed(1)}%`;
+};
+
+/**
+ * Worklist ordering — newest upload first, sorted by the backend's real
+ * `created_at` timestamp (descending). Ids are only a tie-break between rows
+ * that share a timestamp (or lack one); the primary key is never used as the
+ * sort order, so a back-filled/ascending-id table still lists the most
+ * recently registered study at the top. Rows without a parsable timestamp
+ * sink to the bottom instead of floating up.
+ */
+const byCreatedAtDesc = (a: any, b: any): number => {
+  const ta = Date.parse(a?.created_at ?? "");
+  const tb = Date.parse(b?.created_at ?? "");
+  const aOk = !Number.isNaN(ta);
+  const bOk = !Number.isNaN(tb);
+  if (aOk && bOk && ta !== tb) return tb - ta;
+  if (aOk !== bOk) return aOk ? -1 : 1;
+  return Number(b?.id ?? 0) - Number(a?.id ?? 0);
 };
 
 interface DoctorWorkspaceProps {
@@ -87,6 +109,38 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
   const [postRecoveryUrl, setPostRecoveryUrl] = useState<string | null>(null);
   const [liveAlert, setLiveAlert] = useState<string | null>(null);
 
+  // ── RECOVERY STUDIO (backend-sourced, never invented client-side) ──────
+  // `recoveryResult` holds the raw POST /api/images/recover/{id} response —
+  // recovery.py returns: success, image_id, tampered_roi_count, tampered_rois,
+  // recovered_hash, trusted_hash, verification_passed, blockchain_tx_hash,
+  // twin_status and recovered_image_base64 (the real recovered PNG bytes).
+  const [recoveryResult, setRecoveryResult] = useState<any | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [preRecoveryStatus, setPreRecoveryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [postRecoveryStatus, setPostRecoveryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+
+  // ── Object-URL lifecycle for the Recovery Studio previews ───────────────
+  // A blob URL is revoked only when it is replaced or when the workspace
+  // unmounts. The previous cleanup effect depended on BOTH urls, so changing
+  // the post-recovery preview also revoked the still-displayed pre-recovery
+  // one — which is why the left panel went blank.
+  const preUrlRef = useRef<string | null>(null);
+  const postUrlRef = useRef<string | null>(null);
+
+  const assignPreUrl = (url: string | null) => {
+    const prev = preUrlRef.current;
+    if (prev && prev !== url && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+    preUrlRef.current = url;
+    setPreRecoveryUrl(url);
+  };
+
+  const assignPostUrl = (url: string | null) => {
+    const prev = postUrlRef.current;
+    if (prev && prev !== url && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
+    postUrlRef.current = url;
+    setPostRecoveryUrl(url);
+  };
+
   // Connect to live WebSocket for real-time security alerts
   useEffect(() => {
     wsService.connect();
@@ -108,22 +162,24 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
     };
   }, []);
 
-  // Clean up object URLs on replacement or unmount
+  // Clean up both preview object URLs on unmount (replacement revocation is
+  // handled by assignPreUrl/assignPostUrl above).
   useEffect(() => {
     return () => {
-      if (preRecoveryUrl) URL.revokeObjectURL(preRecoveryUrl);
-      if (postRecoveryUrl) URL.revokeObjectURL(postRecoveryUrl);
+      if (preUrlRef.current) URL.revokeObjectURL(preUrlRef.current);
+      if (postUrlRef.current) URL.revokeObjectURL(postUrlRef.current);
     };
-  }, [preRecoveryUrl, postRecoveryUrl]);
+  }, []);
 
   // Load baseline data on mount
   useEffect(() => {
     loadData();
   }, [token]);
 
-  const loadData = async () => {
+  const loadData = async (): Promise<any[]> => {
     setLoading(true);
     setError(null);
+    let sortedImages: any[] = [];
     try {
       const [imgsData, analyticsData, recRecordsData, consentData, blocksData, patientsData] =
         await Promise.allSettled([
@@ -136,21 +192,27 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
         ]);
 
       if (imgsData.status === "fulfilled" && Array.isArray(imgsData.value)) {
+        // Worklist order: NEWEST STUDY FIRST — sorted by the backend's real
+        // `created_at` timestamp DESC (never by id, which can disagree with
+        // upload order). Filters below run on top of this order, so the worklist,
+        // the counts and the default selection all agree on "newest first".
+        sortedImages = [...imgsData.value].sort(byCreatedAtDesc);
         // Derive display flags from the real quarantine_status DB field
-        setImages(imgsData.value.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
-        if (!selectedImageId && imgsData.value.length > 0) {
-          // Auto-select the first scan whose stored object still exists so the
-          // default view renders actual images (stale rows 404 on preview).
+        setImages(sortedImages.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
+        if (!selectedImageId && sortedImages.length > 0) {
+          // Default selection = the newest study whose stored object still
+          // exists so the default view renders actual images (stale rows 404
+          // on preview). Iteration follows the created_at DESC order above.
           (async () => {
-            for (const img of imgsData.value) {
+            for (const img of sortedImages) {
               try {
                 const probeUrl = await fetchProtectedBlobUrl(`/api/images/preview/${img.id}`);
                 URL.revokeObjectURL(probeUrl);
                 onSelectImage(img.id);
                 return;
-              } catch { /* missing object — try the next scan */ }
+              } catch { /* missing object — try the next-newest scan */ }
             }
-            onSelectImage(imgsData.value[0].id);
+            onSelectImage(sortedImages[0].id);
           })();
         }
       }
@@ -172,21 +234,30 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
     } finally {
       setLoading(false);
     }
+    // Sorted (created_at DESC) worklist — lets callers select the newest study.
+    return sortedImages;
   };
 
   // REFRESH AFTER UPLOAD: the moment the doctor leaves the upload view (either
   // via the back link or UploadImage's "View all images"), re-run the existing
-  // loadData() fetch so the freshly registered study shows up in the worklist.
+  // loadData() fetch so the freshly registered study shows up in the worklist —
+  // and select the NEWEST study (created_at DESC), i.e. the upload just made.
   const prevSubPathRef = useRef(activeSubPath);
   useEffect(() => {
     const prevSubPath = prevSubPathRef.current;
     prevSubPathRef.current = activeSubPath;
     if (prevSubPath === "upload-image" && activeSubPath !== "upload-image") {
-      loadData();
+      loadData().then((sorted) => {
+        if (sorted.length > 0) onSelectImage(sorted[0].id);
+      });
     }
   }, [activeSubPath]);
 
-  // Sync selected scan details
+  // Sync selected scan details.
+  // NOTE: `images` is a dependency (the worklist refreshes after upload /
+  // recovery), so everything image-SCOPED to the Recovery Studio — the preview
+  // snapshots and the recovery execution result — lives in the separate
+  // selectedImageId-only effect below and is deliberately NOT reset here.
   useEffect(() => {
     if (!selectedImageId) {
       setSelectedScan(null);
@@ -195,15 +266,11 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
       setRiskTrust(null);
       setRiskTrustLoading(false);
       setEvidenceLoading(false);
-      setPreRecoveryUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      setPostRecoveryUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
-      setRecoverySuccess(null);
       return;
     }
 
     const found = images.find((img) => img.id === selectedImageId);
     setSelectedScan(found || null);
-    setRecoverySuccess(null);
 
     // Fetch Digital Twin and Integrity Evidence
     apiService
@@ -243,58 +310,122 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
         if (isRiskMounted) setEvidenceLoading(false);
       });
 
-    // Fetch authenticated pre-recovery preview
-    let isMounted = true;
-    fetchProtectedBlobUrl(`/api/images/preview/${selectedImageId}`)
-      .then((url) => {
-        if (!isMounted) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        setPreRecoveryUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
-        });
-      })
-      .catch(() => setPreRecoveryUrl(null));
-
     return () => {
-      isMounted = false;
       isRiskMounted = false;
     };
   }, [selectedImageId, images]);
 
-  // Handle Self-Recovery Execution
+  // ── RECOVERY STUDIO (image-scoped) ──────────────────────────────────────
+  // Loads the authenticated CURRENT preview of the selected study
+  // (GET /api/images/preview/{id}) for the pre-recovery panel and owns the
+  // recovery execution state.
+  // Keyed ONLY on selectedImageId: the worklist refresh that follows a
+  // recovery must neither revoke the pre-recovery snapshot (its bytes are
+  // only correct BEFORE POST /api/images/recover/{id} succeeds — recovery.py
+  // + versioning.record_recovered_version repoint file_path to the recovered
+  // ciphertext) nor wipe the post-recovery verification result.
+  useEffect(() => {
+    setRecoverySuccess(null);
+    setRecoveryResult(null);
+    setRecoveryError(null);
+    assignPostUrl(null);
+    setPostRecoveryStatus("idle");
+
+    if (!selectedImageId) {
+      assignPreUrl(null);
+      setPreRecoveryStatus("idle");
+      return;
+    }
+
+    let active = true;
+    assignPreUrl(null);
+    setPreRecoveryStatus("loading");
+    fetchProtectedBlobUrl(`/api/images/preview/${selectedImageId}`)
+      .then((url) => {
+        if (!active) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        assignPreUrl(url);
+        setPreRecoveryStatus("ready");
+      })
+      .catch(() => {
+        if (!active) return;
+        assignPreUrl(null);
+        setPreRecoveryStatus("error");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedImageId]);
+
+  // Handle Self-Recovery Execution — POST /api/images/recover/{image_id}.
+  // The backend (recovery.py) runs the real region-level recovery and returns
+  // {success, image_id, tampered_roi_count, tampered_rois, recovered_hash,
+  //  trusted_hash, verification_passed, blockchain_tx_hash, twin_status,
+  //  recovered_image_base64}. Nothing here is fabricated: on API failure we
+  // surface an error state and show no image at all.
   const handleExecuteRecovery = async (imageId: number) => {
     setRecoveryLoading(true);
     setRecoverySuccess(null);
-    setError(null);
+    setRecoveryResult(null);
+    setRecoveryError(null);
+    assignPostUrl(null);
+    setPostRecoveryStatus("idle");
     try {
       const result = await apiService.recoverImage(imageId);
+      setRecoveryResult(result ?? null);
       setRecoverySuccess(
-        `Self-recovery verified! Restored post-recovery hash: ${result?.recovered_hash || "Valid"}`
+        result?.verification_passed === true
+          ? `Recovered SHA-3 matches the trusted baseline (recovery ran on ${result?.tampered_roi_count ?? 0} ROI(s)).`
+          : `Recovery executed on ${result?.tampered_roi_count ?? 0} ROI(s), but the recovered SHA-3 does not match the trusted baseline.`
       );
-      // Fetch authenticated post-recovery preview
-      fetchProtectedBlobUrl(`/api/images/preview/${imageId}`)
-        .then((url) => {
-          setPostRecoveryUrl((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return url;
-          });
-        })
-        .catch(() => {});
 
-      // Refresh image list, integrity evidence and recovery records
+      // Post-recovery pixels come from the recovery response itself
+      // (`recovered_image_base64` is the real re-encoded PNG). If a future
+      // response omits it, fall back to re-fetching GET /api/images/preview/{id}
+      // — a verified recovery repoints file_path to the recovered ciphertext.
+      const b64 = result?.recovered_image_base64;
+      if (typeof b64 === "string" && b64.startsWith("data:image")) {
+        assignPostUrl(b64);
+        setPostRecoveryStatus("ready");
+      } else {
+        setPostRecoveryStatus("loading");
+        try {
+          const url = await fetchProtectedBlobUrl(`/api/images/preview/${imageId}`);
+          assignPostUrl(url);
+          setPostRecoveryStatus("ready");
+        } catch {
+          assignPostUrl(null);
+          setPostRecoveryStatus("error");
+        }
+      }
+
+      // Refresh worklist, recovery records and integrity evidence (the latter
+      // provides post_recovery_hash / post_recovery_verified / recovery_record_id
+      // for the verification block).
       const [updatedImages, updatedRecords, updatedEvidence] = await Promise.all([
         apiService.listImages(),
         apiService.getRecoveryRecords(),
         apiService.getIntegrityEvidence(imageId),
       ]);
-      setImages(updatedImages.map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status })));
+      // Keep the worklist's created_at DESC ordering after the refresh.
+      setImages(
+        [...updatedImages]
+          .sort(byCreatedAtDesc)
+          .map((img: any) => ({ ...img, is_tampered: !!img.quarantine_status, tampered: !!img.quarantine_status }))
+      );
       if (updatedRecords?.items) setRecoveryRecords(updatedRecords.items);
       if (updatedEvidence) setIntegrityEvidence(updatedEvidence);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || err?.message || "Recovery execution failed.");
+      // Honest error state — no post-recovery image is rendered.
+      assignPostUrl(null);
+      setPostRecoveryStatus("idle");
+      setRecoveryResult(null);
+      setRecoveryError(
+        err?.response?.data?.detail || err?.message || "Recovery execution failed."
+      );
     } finally {
       setRecoveryLoading(false);
     }
@@ -464,6 +595,118 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
   // Verify action on worklist rows: select the study and anchor the inline
   // integrity-evidence panel on the dashboard (the panel lives there).
+  // ── ASYNC SECURITY PROCESSING (real backend job state) ─────────────────
+  // How long a finished job keeps its panel on screen so the clinician can
+  // actually read the forensic outcome.
+  const TERMINAL_LINGER_MS = 180_000;
+  // `jobs` maps image_id -> the LAST status the backend reported. Stage and
+  // progress always come from GET /api/images/{id}/processing-status; nothing
+  // here is a client-side timer or an invented percentage.
+  const [jobs, setJobs] = useState<Record<number, any>>({});
+
+  const pollJob = useCallback(async (imageId: number) => {
+    try {
+      const s = await apiService.getProcessingStatus(imageId);
+      setJobs((prev) => {
+        const terminal = ["COMPLETED", "FAILED"].includes(s.status);
+        return {
+          ...prev,
+          [imageId]: {
+            ...s,
+            pollAttempt: (prev[imageId]?.pollAttempt ?? 0) + 1,
+            // Stamp the moment a terminal state was first observed so the panel
+            // can linger long enough for the clinician to read the outcome
+            // instead of vanishing the instant the worker finishes.
+            terminalAt:
+              prev[imageId]?.terminalAt ?? (terminal ? Date.now() : undefined),
+          },
+        };
+      });
+      return s;
+    } catch (err: any) {
+      // A transient failure (backend restarting, socket reset) must NOT freeze
+      // the panel: advance pollAttempt so the effect re-arms with backoff and
+      // recovers on its own. The last known stage is preserved deliberately.
+      setJobs((prev) => ({
+        ...prev,
+        [imageId]: {
+          ...(prev[imageId] ?? {}),
+          pollAttempt: (prev[imageId]?.pollAttempt ?? 0) + 1,
+          lastError:
+            err?.response?.data?.detail || "status temporarily unavailable",
+        },
+      }));
+      return null;
+    }
+  }, []);
+
+  // Studies with real, non-terminal backend job state, newest first.
+  // A finished job stays visible for TERMINAL_LINGER_MS so the forensic
+  // result is actually readable, then drops out on its own.
+  const activeJobs: ProcessingJob[] = Object.values(jobs)
+    .filter((j): j is ProcessingJob => {
+      if (!j) return false;
+      if (j.status === "NOT_QUEUED") return false;
+      if (["COMPLETED", "FAILED"].includes(j.status)) {
+        const t = (j as any).terminalAt;
+        return typeof t === "number" && Date.now() - t < TERMINAL_LINGER_MS;
+      }
+      return true;
+    })
+    .sort((a, b) => b.image_id - a.image_id);
+
+  // Re-evaluate the linger window without polling the API.
+  useEffect(() => {
+    if (!Object.values(jobs).some((j: any) => j?.terminalAt)) return;
+    const t = window.setTimeout(() => {
+      setJobs((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).filter(
+            ([, j]: [string, any]) =>
+              !j?.terminalAt || Date.now() - j.terminalAt < TERMINAL_LINGER_MS
+          )
+        )
+      );
+    }, TERMINAL_LINGER_MS + 500);
+    return () => window.clearTimeout(t);
+  }, [jobs]);
+
+  // Poll with exponential backoff ONLY while a job is unfinished, and stop once
+  // it reaches a terminal state so the API is never hammered.
+  useEffect(() => {
+    const pending = Object.entries(jobs).filter(
+      ([, j]) => j && j.status !== "COMPLETED" && j.status !== "FAILED" && j.status !== "NOT_QUEUED"
+    );
+    if (pending.length === 0) return;
+
+    const timers: number[] = [];
+    pending.forEach(([idStr, job], idx) => {
+      const attempt = job.pollAttempt ?? 0;
+      const delay = Math.min(30000, 1500 * 2 ** Math.min(attempt, 4));
+      timers.push(
+        window.setTimeout(async () => {
+          await pollJob(Number(idStr));
+        }, delay + idx * 200)
+      );
+    });
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [jobs, pollJob]);
+
+  // Real-time nudge from the existing WebSocket channel; polling is the
+  // fallback when a socket event is missed.
+  useEffect(() => {
+    const unsub = wsService.on("*", (payload: any) => {
+      const id = payload?.image_id;
+      if (id && typeof id === "number") pollJob(id);
+    });
+    return unsub;
+  }, [pollJob]);
+
+  const adoptJob = async (imageId: number, seed?: any) => {
+    if (seed) setJobs((prev) => ({ ...prev, [imageId]: { ...seed, pollAttempt: 0 } }));
+    await pollJob(imageId);
+  };
+
   const handleVerifyStudy = (id: number) => {
     onSelectImage(id);
     if (activeSubPath !== "doctor-dashboard") onNavigate("doctor-dashboard");
@@ -474,39 +717,153 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
     }, 150);
   };
 
-  // Self-recovery steps definition
+  // ------------------------------------------------------------------
+  // RECOVERY PIPELINE — every stage is derived from REAL backend artifacts:
+  //   • integrity-evidence (GET /api/images/{id}/integrity-evidence):
+  //       hash_match / verification_status / affected_regions /
+  //       recovery_status / post_recovery_hash / post_recovery_verified /
+  //       recovery_record_id
+  //   • the POST /api/images/recover/{id} response (recovery.py)
+  //   • the persisted RecoveryRecord (GET /api/images/recovery-records)
+  // A stage stays "upcoming" (rendered muted by StepTracker) unless one of
+  // those actually backs it — no stage is green on load by default.
+  // ------------------------------------------------------------------
+  const activeRecovery =
+    recoveryResult && selectedImageId && recoveryResult.image_id === selectedImageId
+      ? recoveryResult
+      : null;
+  // Records are served newest-first (timestamp DESC), so the first match for
+  // this image is its latest recovery run.
+  const latestRecoveryRecord: any =
+    recoveryRecords.find((rec: any) => String(rec?.image_id) === String(selectedImageId)) ?? null;
+
+  const recoveredRois: any[] = Array.isArray(activeRecovery?.tampered_rois)
+    ? activeRecovery.tampered_rois
+    : Array.isArray(latestRecoveryRecord?.affected_regions)
+    ? latestRecoveryRecord.affected_regions
+    : [];
+  const localizedRegions: any[] = Array.isArray(evidence?.affected_regions)
+    ? evidence.affected_regions
+    : [];
+  const regionCount = recoveredRois.length > 0 ? recoveredRois.length : localizedRegions.length;
+
+  // Stage 1 evidence: a reported hash deviation, a quarantined study, or a
+  // recorded recovery run (the tamper flag itself is reset by a verified
+  // recovery, so the recovery record is the historical proof it existed).
+  const hashDeviationKnown =
+    evHashMatch === false ||
+    evStatus === "TAMPERED" ||
+    evStatus === "QUARANTINED" ||
+    selectedScan?.is_tampered === true;
+  const tamperEvidenceKnown =
+    hashDeviationKnown || !!activeRecovery || !!latestRecoveryRecord;
+  const recoveryExecuted =
+    !!activeRecovery ||
+    !!latestRecoveryRecord ||
+    evidence?.recovery_status === "RECOVERED" ||
+    evidence?.recovery_status === "FAILED";
+
+  // Post-recovery verdict — true only when a backend verification says so.
+  const postVerified: boolean | null =
+    typeof activeRecovery?.verification_passed === "boolean"
+      ? activeRecovery.verification_passed
+      : typeof evidence?.post_recovery_verified === "boolean"
+      ? evidence.post_recovery_verified
+      : typeof latestRecoveryRecord?.hash_match === "boolean"
+      ? latestRecoveryRecord.hash_match
+      : null;
+
+  const stage1Done = tamperEvidenceKnown;
+  const stage2Done = stage1Done && regionCount > 0;
+  // Stages 03/04 are executed atomically inside recover_compromised_image:
+  // 03 = trusted original pulled from the Digital Twin storage reference,
+  // 04 = ROI replacement + SHA-3 recomputed on the re-encoded recovered file.
+  const stage3Done = recoveryExecuted;
+  const stage4Done = !!(
+    activeRecovery?.recovered_hash ||
+    latestRecoveryRecord?.recovered_hash ||
+    evidence?.post_recovery_hash
+  );
+  const stage5Done = postVerified === true;
+
+  const stageStatus = (
+    done: boolean,
+    inProgress: boolean
+  ): "complete" | "current" | "upcoming" =>
+    done ? "complete" : inProgress ? "current" : "upcoming";
+
+  // Self-recovery steps definition — descriptions state only what the backend
+  // has actually reported (or what is still pending). Note: the backend method
+  // is TRUSTED_IPFS_ROI_REPLACEMENT (recovery.py) — there is no fragile
+  // watermark extraction, so stage 03 is named for the retrieval the code
+  // really performs instead of an un-executed watermark step.
   const recoverySteps: StepItem[] = [
     {
       number: "01",
       title: "Compromised Scan Isolated",
-      description: "Hash deviation detected at slice indices.",
-      status: selectedScan?.is_tampered ? "complete" : "current",
+      description: stage1Done
+        ? hashDeviationKnown
+          ? "Trusted vs current SHA-3 deviation reported by integrity-evidence."
+          : "Recovery record on file for this study."
+        : evidenceLoading
+        ? "Recomputing SHA-3 against the trusted baseline…"
+        : evidence
+        ? "No hash deviation reported — study currently verifies clean."
+        : "Integrity evidence not available for this study.",
+      status: stageStatus(stage1Done, !stage1Done && evidenceLoading),
     },
     {
       number: "02",
       title: "Tampered Region Masked",
-      description: "Swin-UNet segmented altered boundary bed.",
-      status: selectedScan?.is_tampered ? "complete" : "upcoming",
+      description: stage2Done
+        ? `${regionCount} region(s) localized (integrity-evidence affected_regions / recovery ROIs).`
+        : stage1Done
+        ? "Pending — no localization evidence (affected_regions) on record yet."
+        : "Pending — awaiting stage 01.",
+      status: stageStatus(stage2Done, !stage2Done && stage1Done && recoveryLoading),
     },
     {
       number: "03",
-      title: "Fragile Watermark Extracted",
-      description: "Payload recovered from high-frequency peripheral subbands.",
-      status: selectedScan?.is_tampered ? "complete" : "upcoming",
+      title: "Trusted Backup Retrieved",
+      description: stage3Done
+        ? "TRUSTED_IPFS_ROI_REPLACEMENT: trusted original loaded from the Digital Twin reference."
+        : "Pending — recovery pulls the trusted original from the Digital Twin reference.",
+      status: stageStatus(stage3Done, !stage3Done && recoveryLoading),
     },
     {
       number: "04",
-      title: "Dual-Domain Synthesis Done",
-      description: "Lossless pixel matrix reconstruction committed.",
-      status: recoverySuccess ? "complete" : selectedScan?.is_tampered ? "current" : "upcoming",
+      title: "Trusted ROI Replacement",
+      description: stage4Done
+        ? `Recovered pixels re-encoded and SHA-3 recomputed (execution ran on ${activeRecovery?.tampered_roi_count ?? regionCount} ROI(s)).`
+        : "Pending — tampered regions overwritten from the trusted scan, then re-hashed.",
+      status: stageStatus(stage4Done, !stage4Done && recoveryLoading),
     },
     {
       number: "05",
       title: "Review & Forensic Sign-off",
-      description: "Signed confirmation recorded on consortium ledger.",
-      status: recoverySuccess ? "complete" : "upcoming",
+      description: stage5Done
+        ? "Post-recovery SHA-3 matches the trusted hash; ledger transaction recorded."
+        : postVerified === false
+        ? "Post-recovery SHA-3 verification FAILED — sign-off withheld."
+        : stage4Done
+        ? "Awaiting post-recovery SHA-3 verification against the trusted hash."
+        : "Pending — verification runs after a recovery execution.",
+      status: stageStatus(stage5Done, !stage5Done && stage4Done && evidenceLoading),
     },
   ];
+
+  // One honest badge for the tracker — reflects what has really happened.
+  const recoveryStageBadge = recoveryLoading
+    ? "Executing Recovery…"
+    : stage5Done
+    ? "Completed • Verified"
+    : stage4Done
+    ? "Awaiting Sign-off"
+    : stage1Done
+    ? "Ready for Recovery"
+    : evidenceLoading
+    ? "Loading Evidence…"
+    : "No Tamper Evidence";
 
   // ------------------------------------------------------------------
   // SUB-VIEW: secure upload. Reuses the existing UploadImage component
@@ -530,6 +887,28 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
             // no stitch branch for doctors — land on the real worklist instead.
             onNavigate(view === "medical-images" ? "doctor-dashboard" : view)
           }
+          onAccepted={(payload: any) => {
+            // Fast-accept returned real ids: adopt the job, refresh the worklist
+            // immediately so the doctor can keep working while forensics run.
+            if (payload?.image_id) {
+              adoptJob(payload.image_id, {
+                status: payload.status,
+                progress: 5,
+                progress_basis: "pipeline_stage",
+                stages: [],
+              });
+              if (payload?.worker_queued === false) {
+                setError(
+                  payload?.worker_error
+                    ? `Study stored, but background processing was NOT queued: ${payload.worker_error}`
+                    : "Study stored, but background processing was NOT queued (worker unavailable)."
+                );
+              }
+              loadData().then((sorted) => {
+                if (sorted.length > 0) onSelectImage(sorted[0].id);
+              });
+            }
+          }}
         />
       </div>
     );
@@ -562,6 +941,28 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
           >
             <span className="material-symbols-outlined text-sm">close</span>
           </button>
+        </div>
+      )}
+
+      {/* Async security processing: real backend job state for every study
+          this session uploaded or adopted. Non-blocking - the dashboard stays
+          fully usable while the Celery worker runs the forensics. */}
+      {activeJobs.length > 0 && (
+        <div className="space-y-3">
+          {activeJobs.map((j) => (
+            <ProcessingPipelinePanel
+              key={j.image_id}
+              job={j}
+              onRetry={() => apiService.retryAnalysis(j.image_id).then(() => pollJob(j.image_id))}
+              onDismiss={() =>
+                setJobs((prev) => {
+                  const next = { ...prev };
+                  delete next[j.image_id];
+                  return next;
+                })
+              }
+            />
+          ))}
         </div>
       )}
 
@@ -661,7 +1062,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                 className="px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-xs font-semibold flex items-center gap-1.5 shadow-sm hover:bg-primary-container transition-colors"
               >
                 <span className="material-symbols-outlined text-sm" aria-hidden="true">upload</span>
-                <span>Upload Medical Image</span>
+                <span>+ Import Medical Study</span>
               </button>
             </div>
           </div>
@@ -709,7 +1110,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
               icon="auto_fix_high"
               iconBgClass="bg-tertiary-fixed text-tertiary"
               valueColorClass="text-primary-container"
-              footerText="Watermark parity recon"
+              footerText="Region-level ROI recovery"
               footerBadgeText="Pending Sign-off"
               footerBadgeClass="bg-tertiary-fixed text-on-tertiary-fixed font-semibold"
             />
@@ -820,8 +1221,10 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                                 </span>
                               </div>
                             </td>
-                            <td className="py-3 px-3 font-mono text-[10px] text-on-surface-variant max-w-[140px] truncate" title={img.hash}>
-                              {img.hash ? `${img.hash.slice(0, 10)}...${img.hash.slice(-6)}` : "Verified"}
+                            <td className="py-3 px-3 font-mono text-[10px] text-on-surface-variant max-w-[140px] truncate" title={img.original_hash || img.hash}>
+                              {img.original_hash || img.hash
+                                ? `${(img.original_hash || img.hash).slice(0, 10)}...${(img.original_hash || img.hash).slice(-6)}`
+                                : "Not available"}
                             </td>
                             <td className="py-3 px-3 text-right">
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
@@ -1642,23 +2045,25 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                 <div className="flex items-center gap-2">
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-xs uppercase tracking-wider font-semibold">
                     <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
-                    Protocol Active • RevFragile-v4
+                    Protocol Active • Region-Level ROI Replacement
                   </span>
                   <span className="font-code-sm text-xs text-on-surface-variant font-medium">
-                    DICOM UID: {selectedScan ? `1.2.840.10008.5.${selectedScan.id}` : "N/A"}
+                    Image ID: {selectedImageId ?? "N/A"}
                   </span>
                 </div>
                 <h2 className="font-headline-lg text-xl font-bold text-on-surface">
-                  Self-Recovery Studio • Reversible Fragile Watermark Reconstruction
+                  Self-Recovery Studio • Trusted ROI Replacement Recovery
                 </h2>
                 <p className="font-body-sm text-xs text-on-surface-variant">
-                  Restores zero-distortion pixel baselines from encrypted payload sub-bands without loss of diagnostic fidelity.
+                  Backend method TRUSTED_IPFS_ROI_REPLACEMENT: tampered regions are overwritten from the trusted
+                  original held by the Digital Integrity Twin, then the recovered scan is re-hashed and verified
+                  against the trusted SHA-3 baseline.
                 </p>
               </div>
 
-              {selectedScan && (
+              {selectedImageId !== null && (
                 <button
-                  onClick={() => handleExecuteRecovery(selectedScan.id)}
+                  onClick={() => handleExecuteRecovery(selectedImageId)}
                   disabled={recoveryLoading}
                   className="px-5 py-2.5 rounded-lg bg-primary text-on-primary font-headline-sm text-xs font-semibold hover:bg-primary-container shadow-sm flex items-center gap-2 disabled:opacity-50"
                 >
@@ -1667,7 +2072,7 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                       <span className="material-symbols-outlined text-sm animate-spin">
                         progress_activity
                       </span>
-                      <span>Synthesizing Zero-Distortion Payload...</span>
+                      <span>Executing Region-Level Recovery...</span>
                     </>
                   ) : (
                     <>
@@ -1680,16 +2085,38 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
             </div>
           </div>
 
-          {/* 5-Step Pipeline Tracker */}
-          <StepTracker
-            steps={recoverySteps}
-            stageBadge={recoverySuccess ? "Completed • Sign-off Gate" : "Active Stage"}
-          />
+          {/* 5-Step Pipeline Tracker — stages are green only when backed by
+              real backend evidence (integrity-evidence / recover response /
+              RecoveryRecord); everything else renders muted as pending. */}
+          <StepTracker steps={recoverySteps} stageBadge={recoveryStageBadge} />
 
-          {recoverySuccess && (
-            <div className="p-3 bg-secondary-container text-on-secondary-container rounded-xl font-body-sm text-xs flex items-center gap-2 border border-secondary/30">
-              <span className="material-symbols-outlined text-base text-secondary">
-                verified
+          {recoveryError && (
+            <div className="p-3 bg-error-container text-on-error-container rounded-xl font-body-sm text-xs flex items-center gap-2 border border-error/30">
+              <span className="material-symbols-outlined text-base text-error">error</span>
+              <span>
+                <span className="font-bold">Recovery execution failed — </span>
+                {recoveryError}
+              </span>
+            </div>
+          )}
+
+          {recoverySuccess && !recoveryError && (
+            <div
+              className={`p-3 rounded-xl font-body-sm text-xs flex items-center gap-2 border ${
+                postVerified === true
+                  ? "bg-secondary-container text-on-secondary-container border-secondary/30"
+                  : "bg-error-container text-on-error-container border-error/30"
+              }`}
+            >
+              <span
+                className={`material-symbols-outlined text-base ${
+                  postVerified === true ? "text-secondary" : "text-error"
+                }`}
+              >
+                {postVerified === true ? "verified" : "gpp_maybe"}
+              </span>
+              <span className="font-bold">
+                {postVerified === true ? "✓ RECOVERY VERIFIED" : "✕ RECOVERY VERIFICATION FAILED"}
               </span>
               <span>{recoverySuccess}</span>
             </div>
@@ -1697,20 +2124,40 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
 
           {/* Pre vs Post Recovery Comparison View */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+            {/* LEFT · Pre-recovery: the ACTUAL current image, GET /api/images/preview/{id} */}
             <div className="bg-surface-container-lowest rounded-xl p-4 border border-surface-container-high/60 shadow-sm space-y-2">
               <div className="flex items-center justify-between pb-2 border-b border-surface-container-low">
                 <span className="font-label-sm text-xs font-semibold text-error">
-                  Pre-Recovery Ingested State (Tampered)
+                  Pre-Recovery Ingested State{tamperEvidenceKnown ? " (Tampered)" : ""}
                 </span>
-                <span className="px-2 py-0.5 rounded bg-error-container text-on-error-container text-[10px] font-semibold">
-                  Altered Matrix
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                    tamperEvidenceKnown
+                      ? "bg-error-container text-on-error-container"
+                      : "bg-surface-container text-on-surface-variant"
+                  }`}
+                >
+                  {tamperEvidenceKnown ? "Altered Matrix" : evidence ? "Hash Verified" : "State Unknown"}
                 </span>
               </div>
               <div className="bg-[#0D1117] h-64 rounded-lg flex items-center justify-center overflow-hidden">
-                {preRecoveryUrl ? (
+                {preRecoveryStatus === "loading" ? (
+                  <span className="font-code-sm text-xs text-slate-500 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-sm animate-spin">progress_activity</span>
+                    <span>Fetching decrypted preview…</span>
+                  </span>
+                ) : preRecoveryStatus === "error" ? (
+                  <span className="font-code-sm text-xs text-slate-500">
+                    Not available — preview could not be loaded for this study.
+                  </span>
+                ) : preRecoveryUrl ? (
                   <img
                     src={preRecoveryUrl}
                     alt="Pre-Recovery Authenticated Preview"
+                    onError={() => {
+                      assignPreUrl(null);
+                      setPreRecoveryStatus("error");
+                    }}
                     className="max-h-full max-w-full object-contain"
                   />
                 ) : (
@@ -1719,35 +2166,223 @@ export const DoctorWorkspace: React.FC<DoctorWorkspaceProps> = ({
                   </span>
                 )}
               </div>
+              <span className="font-code-sm text-[10px] text-on-surface-variant block">
+                {selectedImageId ? `GET /api/images/preview/${selectedImageId}` : "No study selected"}
+              </span>
             </div>
 
+            {/* RIGHT · Post-recovery: real recovered bytes only after a real
+                recovery run; otherwise an honest empty state. */}
             <div className="bg-surface-container-lowest rounded-xl p-4 border border-surface-container-high/60 shadow-sm space-y-2">
               <div className="flex items-center justify-between pb-2 border-b border-surface-container-low">
                 <span className="font-label-sm text-xs font-semibold text-secondary">
                   Post-Recovery Synthesized State (Baseline)
                 </span>
-                <span className="px-2 py-0.5 rounded bg-secondary-fixed text-on-secondary-fixed text-[10px] font-semibold">
-                  {recoverySuccess ? "Healed Losslessly" : "Standby"}
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                    postVerified === true
+                      ? "bg-secondary-fixed text-on-secondary-fixed"
+                      : postVerified === false || recoveryError
+                      ? "bg-error-container text-on-error-container"
+                      : "bg-surface-container text-on-surface-variant"
+                  }`}
+                >
+                  {recoveryLoading
+                    ? "Recovering…"
+                    : recoveryError
+                    ? "Recovery Failed"
+                    : postVerified === true
+                    ? "✓ Verified"
+                    : postVerified === false
+                    ? "✕ Verification Failed"
+                    : activeRecovery
+                    ? "Recovery Executed"
+                    : "Standby"}
                 </span>
               </div>
               <div className="bg-[#0D1117] h-64 rounded-lg flex items-center justify-center overflow-hidden">
-                {recoverySuccess && postRecoveryUrl ? (
-                  <img
-                    src={postRecoveryUrl}
-                    alt="Post-Recovery Authenticated Result"
-                    className="max-h-full max-w-full object-contain filter contrast-105"
-                  />
-                ) : (
+                {recoveryLoading ? (
+                  <div className="text-center p-4 flex flex-col items-center gap-2">
+                    <span className="material-symbols-outlined text-3xl text-primary animate-spin">
+                      progress_activity
+                    </span>
+                    <span className="font-code-sm text-xs text-slate-400">
+                      Executing region-level recovery on the backend…
+                    </span>
+                  </div>
+                ) : recoveryError ? (
+                  <div className="text-center p-4">
+                    <span className="material-symbols-outlined text-3xl text-red-400 mb-1 block">error</span>
+                    <span className="font-code-sm text-xs text-slate-400">
+                      Recovery failed — no post-recovery image available.
+                    </span>
+                  </div>
+                ) : !selectedImageId ? (
+                  <div className="text-center p-4">
+                    <span className="material-symbols-outlined text-3xl text-outline mb-1 block">touch_app</span>
+                    <span className="font-code-sm text-xs text-slate-400">Select a study to run recovery.</span>
+                  </div>
+                ) : !activeRecovery ? (
                   <div className="text-center p-4">
                     <span className="material-symbols-outlined text-3xl text-outline mb-1 block">
                       healing
                     </span>
-                    <span className="font-code-sm text-xs text-slate-400">
-                      Click 'Execute Reversible Recovery' to synthesize certified baseline
+                    <span className="font-code-sm text-xs text-slate-400 block">
+                      Recovery not executed
+                    </span>
+                    <span className="font-code-sm text-[11px] text-slate-500">
+                      Run recovery to synthesize the trusted region.
                     </span>
                   </div>
+                ) : postRecoveryStatus === "loading" ? (
+                  <span className="font-code-sm text-xs text-slate-500">Fetching recovered preview…</span>
+                ) : postRecoveryStatus === "error" || !postRecoveryUrl ? (
+                  <span className="font-code-sm text-xs text-slate-500">
+                    Not available — recovered image could not be loaded.
+                  </span>
+                ) : (
+                  <img
+                    src={postRecoveryUrl}
+                    alt="Post-Recovery Authenticated Result"
+                    onError={() => {
+                      assignPostUrl(null);
+                      setPostRecoveryStatus("error");
+                    }}
+                    className="max-h-full max-w-full object-contain filter contrast-105"
+                  />
                 )}
               </div>
+
+              {/* Post-recovery verification — real fields from the recover
+                  response + GET /api/images/{id}/integrity-evidence. */}
+              {activeRecovery ? (
+                <div className="rounded-lg border border-surface-container-high/60 bg-surface-container-low p-3 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-label-sm text-[10px] uppercase tracking-wider text-outline font-semibold">
+                      Post-Recovery Verification
+                    </span>
+                    <span
+                      className={`font-label-md text-[11px] font-bold ${
+                        postVerified === true
+                          ? "text-secondary"
+                          : postVerified === false
+                          ? "text-error"
+                          : "text-on-surface-variant"
+                      }`}
+                    >
+                      {postVerified === true
+                        ? "✓ RECOVERY VERIFIED"
+                        : postVerified === false
+                        ? "✕ RECOVERY VERIFICATION FAILED"
+                        : "Verification pending"}
+                    </span>
+                  </div>
+                  <div className="space-y-1 font-body-sm text-[11px]">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-on-surface-variant shrink-0">Trusted SHA-3</span>
+                      <code
+                        className="font-mono text-[10px] text-on-surface truncate"
+                        title={activeRecovery.trusted_hash || evidence?.trusted_hash || ""}
+                      >
+                        {shortHash(activeRecovery.trusted_hash ?? evidence?.trusted_hash) || "Not available"}
+                      </code>
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-on-surface-variant shrink-0">Recovered SHA-3</span>
+                      <code
+                        className="font-mono text-[10px] text-on-surface truncate"
+                        title={activeRecovery.recovered_hash || evidence?.post_recovery_hash || ""}
+                      >
+                        {shortHash(activeRecovery.recovered_hash ?? evidence?.post_recovery_hash) || "Not available"}
+                      </code>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Hash Match</span>
+                      <span
+                        className={`font-label-md text-[11px] font-bold ${
+                          postVerified === true ? "text-secondary" : postVerified === false ? "text-error" : "text-on-surface-variant"
+                        }`}
+                      >
+                        {postVerified === true ? "✓ MATCH" : postVerified === false ? "✕ MISMATCH" : "N/A"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Digital Integrity Twin</span>
+                      <span className="font-code-sm text-[10px] font-semibold text-on-surface">
+                        {activeRecovery.twin_status ?? evidence?.dit_status ?? "Not available"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Recovery record</span>
+                      <span className="font-code-sm text-[10px] text-on-surface">
+                        {latestRecoveryRecord?.recovery_id
+                          ? `REC-#${latestRecoveryRecord.recovery_id}`
+                          : evidence?.recovery_record_id
+                          ? `REC-#${evidence.recovery_record_id}`
+                          : "Not available"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Record status</span>
+                      <span className="font-code-sm text-[10px] text-on-surface">
+                        {latestRecoveryRecord?.status ?? evidence?.recovery_status ?? "Not available"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Executed at</span>
+                      <span className="font-code-sm text-[10px] text-on-surface">
+                        {fmtTimestamp(latestRecoveryRecord?.created_at)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Tampered ROIs replaced</span>
+                      <span className="font-code-sm text-[10px] text-on-surface">
+                        {activeRecovery.tampered_roi_count !== undefined &&
+                        activeRecovery.tampered_roi_count !== null
+                          ? `${activeRecovery.tampered_roi_count} region(s)`
+                          : recoveredRois.length > 0
+                          ? `${recoveredRois.length} region(s)`
+                          : "Not available"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Recovery method</span>
+                      <span className="font-code-sm text-[10px] text-on-surface truncate">
+                        {latestRecoveryRecord?.recovery_method ??
+                          evidence?.recovery?.recovery_method ??
+                          "Not available"}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-on-surface-variant shrink-0">Ledger tx</span>
+                      <code
+                        className="font-mono text-[10px] text-on-surface truncate"
+                        title={
+                          activeRecovery.blockchain_tx_hash ||
+                          latestRecoveryRecord?.blockchain_transaction ||
+                          ""
+                        }
+                      >
+                        {shortTx(
+                          activeRecovery.blockchain_tx_hash ??
+                            latestRecoveryRecord?.blockchain_transaction ??
+                            null
+                        ) || "Not available"}
+                      </code>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-on-surface-variant">Evidence refreshed</span>
+                      <span className="font-code-sm text-[10px] text-on-surface">
+                        {evidence ? fmtTimestamp(evidence.verification_timestamp) : "Not available"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <span className="font-code-sm text-[10px] text-on-surface-variant block">
+                  No recovery record for this study yet.
+                </span>
+              )}
             </div>
           </div>
         </div>

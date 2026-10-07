@@ -1,5 +1,6 @@
 import json
 import hashlib
+import time
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Request, Query
 from fastapi.responses import Response, FileResponse
 from sqlalchemy.orm import Session
@@ -16,7 +17,7 @@ from app.models import (
     User, MedicalImage, PatientProfile, DoctorProfile, Hospital, Report,
     AuditLog, DeviceFingerprint, DicomMetadata, RevocationRegistry, Permission,
     BlockchainTransaction, DicomSlice, ConsentGrant, DigitalIntegrityTwin,
-    RecoveryRecord, TamperRiskLog
+    RecoveryRecord, TamperRiskLog, ImageVersion, IntegrityEvent, AIInference
 )
 from app.schemas import MedicalImageResponse, ImageVerifyResponse, RecoveryRecordListResponse, IntegrityEvidenceResponse
 from app.auth import get_current_user, RoleChecker
@@ -27,7 +28,13 @@ from app.storage_provider import (
 )
 from app.blockchain import blockchain_service
 from app.notifications import ws_manager
-from app.celery_worker import run_ai_tamper_localization, compile_forensic_report_task
+from app.celery_worker import (
+    PIPELINE_STAGES,
+    _stage_progress,
+    compile_forensic_report_task,
+    enqueue_pipeline,
+    run_ai_tamper_localization,
+)
 from app.digital_twin import create_digital_twin, get_digital_twin, update_twin_status
 from app.risk_engine import calculate_tamper_risk_score, calculate_cybersecurity_trust_score
 from app.access_policy import evaluate_risk_adaptive_access, ACTION_ALLOW, ACTION_REQUIRE_ZKP, ACTION_QUARANTINE
@@ -256,6 +263,352 @@ async def upload_medical_image(
 
     logger.info(f"Medical scan registered successfully ({stored.provider}). Image ID: {db_image.id}")
     return db_image
+
+@router.post("/upload-async")
+async def upload_medical_image_async(
+    title: str = Form(...),
+    patient_id: int = Form(...),
+    image_type: str = Form(...),
+    file: UploadFile = File(...),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(uploader_guard),
+):
+    """
+    FAST-ACCEPT upload: returns as soon as the study is safely stored and the
+    forensic job is queued.
+
+    The request still performs everything that is mandatory for the integrity
+    chain to exist at all - validation, preprocessing, 4D Chen permutation +
+    AES-256-GCM, SHA-3, Digital Integrity Twin, encrypted storage and the ledger
+    registration. Those are the operations that create the trusted baseline and
+    they are fast. Everything expensive and deferrable (SRM, Hybrid Swin-UNet
+    localization, Grad-CAM, risk/trust, risk-adaptive access, PDF report) is
+    queued to the existing Celery worker and never blocks this response.
+
+    The image is NOT reported as VERIFIED until the worker finishes: it is
+    returned with integrity_status PROCESSING and a real job id.
+    """
+    started = time.perf_counter()
+
+    if image_type not in ["MRI", "CT", "XRay", "PET", "Ultrasound"]:
+        raise HTTPException(status_code=400, detail="Unsupported medical image type")
+
+    patient_profile = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
+    if not patient_profile:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+    patient_user = _assert_can_upload_for_patient(db, current_user, patient_profile)
+    hospital_id = _resolve_image_hospital_id(current_user, patient_user)
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file is not allowed")
+    if len(contents) > settings.max_image_bytes:
+        raise HTTPException(status_code=400, detail=f"File too large (Max {settings.max_image_bytes} bytes)")
+    _validate_standard_upload(file, contents)
+
+    # 1. Preprocessing + 2. 4D Chen/AES-256-GCM + SHA-3 (fast, mandatory)
+    stage_ms: dict[str, float] = {}
+
+    def mark(name: str, t0: float) -> float:
+        now = time.perf_counter()
+        stage_ms[name] = round((now - t0) * 1000, 1)
+        return now
+
+    t_stage = time.perf_counter()
+    try:
+        preprocessed_bytes, quality_score, entropy = preprocess_medical_image(contents)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Image preprocessing failed: {str(e)}")
+    t_stage = mark("preprocess", t_stage)
+
+    encrypted_bytes, original_hash, metadata_json = encrypt_image(preprocessed_bytes, entropy)
+    t_stage = mark("encrypt_chen_aes", t_stage)
+    encrypted_hash = sha3_hash(encrypted_bytes)
+    t_stage = mark("sha3", t_stage)
+
+    # 3. Encrypted storage
+    filename = _safe_upload_filename(file.filename, "img", patient_id)
+    stored = store_encrypted_object(encrypted_bytes, filename)
+    t_stage = mark("store_encrypted", t_stage)
+
+    db_image = MedicalImage(
+        title=title,
+        patient_id=patient_id,
+        uploader_id=current_user.id,
+        hospital_id=hospital_id,
+        image_type=image_type,
+        file_path=stored.reference,
+        original_hash=original_hash,
+        encrypted_hash=encrypted_hash,
+        quality_score=quality_score,
+        entropy=entropy,
+        encryption_key_metadata=metadata_json,
+    )
+    try:
+        db.add(db_image)
+        db.flush()
+        db.refresh(db_image)
+
+        # 4. Digital Integrity Twin (real)
+        create_digital_twin(
+            db=db,
+            image_id=db_image.id,
+            trusted_hash=original_hash,
+            ipfs_cid=stored.reference,
+            owner_id=current_user.id,
+            metadata_dict={
+                "title": title,
+                "image_type": image_type,
+                "quality_score": quality_score,
+                "entropy": entropy,
+                "storage_provider": stored.provider,
+                "size": len(contents),
+            },
+            provenance_info={
+                "uploader_id": current_user.id,
+                "uploader": current_user.username,
+                "hospital_id": hospital_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            commit=False,
+        )
+        t_stage = mark("dit_create", t_stage)
+
+        # 5. Ledger registration (real)
+        blockchain_service.record_upload(
+            db, db_image.id, original_hash, stored.reference,
+            patient_id, current_user.id, commit=False,
+        )
+        t_stage = mark("blockchain_register", t_stage)
+        db.add(
+            AuditLog(
+                user_id=current_user.id,
+                image_id=db_image.id,
+                action="IMAGE_UPLOADED_ASYNC",
+                ip_address=request.client.host if request and request.client else None,
+                status="SUCCESS",
+                details=f"Fast-accept upload queued for background security processing ({stored.provider}).",
+            )
+        )
+        db.commit()
+        t_stage = mark("db_commit_registration", t_stage)
+    except Exception as e:
+        db.rollback()
+        try:
+            delete_encrypted_object(stored.reference)
+        except Exception:
+            logger.warning(f"Could not compensate encrypted object {stored.reference}")
+        logger.error(f"Async upload registration failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload registration failed: {str(e)}")
+
+    # 6. Real v1 version + job row, then enqueue (idempotent per image version)
+    baseline_version = ensure_image_version(
+        db=db, image=db_image, integrity_status="PROCESSING", commit=False
+    )
+    db.commit()
+    db.refresh(baseline_version)
+    t_stage = mark("version_create", t_stage)
+    job = AIInference(
+        image_version_id=baseline_version.id,
+        requested_by_id=current_user.id,
+        status="QUEUED",
+        model_version="demo-srm-attention-unet-v1",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    t_stage = mark("job_create", t_stage)
+
+    # 7. Enqueue. Broker unavailability is reported honestly - we never fall
+    #    back to running the AI inline, and we never claim the job is running.
+    queued = False
+    worker_error = None
+    try:
+        # Probes the broker first, then publishes with retry disabled: a dead
+        # broker fails in ~1s instead of blocking on kombu's reconnect loop.
+        enqueue_pipeline(db_image.id, job.id)
+        queued = True
+    except Exception as exc:
+        worker_error = str(exc)
+        logger.error(
+            f"Celery broker unavailable ({exc}). Image {db_image.id} is stored and "
+            "registered, but background forensic processing is NOT queued."
+        )
+        job.error_message = f"Worker broker unavailable: {exc}"[:500]
+        db.commit()
+
+    stage_ms["enqueue"] = round((time.perf_counter() - t_stage) * 1000, 1)
+    elapsed_ms = round((time.perf_counter() - started) * 1000, 2)
+    logger.info(
+        f"Async upload accepted image={db_image.id} job={job.id} "
+        f"queued={queued} in {elapsed_ms}ms | stage_ms={stage_ms}"
+    )
+
+    return {
+        "image_id": db_image.id,
+        "study_id": db_image.id,
+        "title": db_image.title,
+        "job_id": job.id,
+        "status": "QUEUED" if queued else "AWAITING_WORKER",
+        "processing_state": "PROCESSING",
+        "worker_queued": queued,
+        "worker_error": worker_error,
+        "integrity_status": "PROCESSING",
+        "trusted_sha3": original_hash,
+        "ciphertext_sha3": encrypted_hash,
+        "storage_provider": stored.provider,
+        "upload_accepted_ms": elapsed_ms,
+        "stage_timings_ms": stage_ms,
+        "message": (
+            "Study accepted. Security processing continues in the background."
+            if queued
+            else "Study stored and integrity-registered, but the background worker broker is "
+                 "unavailable, so forensic processing has NOT been queued."
+        ),
+    }
+
+
+@router.get("/{image_id}/processing-status")
+async def get_processing_status(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Real job status for an image: stage, stage-based progress and result.
+
+    Progress is derived from the persisted pipeline stage, not from a client-side
+    timer, so the UI can never show a stage the backend has not reached.
+    """
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+
+    patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
+    _comparison_authorization(db, image, current_user)
+
+    jobs = (
+        db.query(AIInference)
+        .join(ImageVersion, AIInference.image_version_id == ImageVersion.id)
+        .filter(ImageVersion.image_id == image_id)
+        .order_by(AIInference.created_at.desc())
+        .all()
+    )
+    if not jobs:
+        return {
+            "image_id": image_id,
+            "status": "NOT_QUEUED",
+            "progress": 100,
+            "progress_basis": "pipeline_stage",
+            "stages": list(PIPELINE_STAGES),
+            "job_id": None,
+        }
+
+    job = jobs[0]
+    result = {}
+    if job.result_json:
+        try:
+            result = json.loads(job.result_json)
+        except (TypeError, ValueError):
+            result = {}
+
+    return {
+        "image_id": image_id,
+        "job_id": job.id,
+        "status": job.status,
+        "progress": _stage_progress(job.status),
+        "progress_basis": "pipeline_stage",
+        "stages": list(PIPELINE_STAGES),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error": job.error_message,
+        "tamper_percentage": result.get("tampered_percentage"),
+        "confidence_score": result.get("confidence_score"),
+        "risk_score": result.get("risk_score"),
+        "trust_score": result.get("trust_score"),
+        "heatmap_reference": job.heatmap_storage_reference,
+        "mask_reference": job.mask_storage_reference,
+    }
+
+
+@router.post("/{image_id}/retry-analysis")
+async def retry_analysis(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Controlled retry for a FAILED forensic job (explicit user action only)."""
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+    _comparison_authorization(db, image, current_user)
+
+    version = (
+        db.query(ImageVersion)
+        .filter(ImageVersion.image_id == image_id)
+        .order_by(ImageVersion.version_number.asc())
+        .first()
+    )
+    if version is None:
+        raise HTTPException(status_code=404, detail="No image version to analyze")
+
+    failed = (
+        db.query(AIInference)
+        .filter(AIInference.image_version_id == version.id, AIInference.status == "FAILED")
+        .order_by(AIInference.created_at.desc())
+        .first()
+    )
+    if failed is not None:
+        # Reuse the SAME job identifier so the history stays auditable.
+        failed.status = "QUEUED"
+        failed.error_message = None
+        failed.completed_at = None
+        failed.started_at = None
+        db.commit()
+        job_id = failed.id
+    else:
+        latest = (
+            db.query(AIInference)
+            .filter(AIInference.image_version_id == version.id)
+            .order_by(AIInference.created_at.desc())
+            .first()
+        )
+        if latest is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "The most recent forensic job for this version is "
+                    f"'{latest.status}' and is not FAILED. Only failed analysis "
+                    "can be retried; re-analysis of a completed version must be "
+                    "requested explicitly."
+                ),
+            )
+        job = AIInference(
+            image_version_id=version.id,
+            requested_by_id=current_user.id,
+            status="QUEUED",
+            model_version="demo-srm-attention-unet-v1",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+
+    try:
+        enqueue_pipeline(image_id, job_id)
+        queued = True
+        error = None
+    except Exception as exc:
+        queued = False
+        error = str(exc)
+    return {
+        "image_id": image_id,
+        "job_id": job_id,
+        "queued": queued,
+        "worker_error": error,
+    }
+
 
 @router.post("/upload-dicom", response_model=MedicalImageResponse)
 async def upload_dicom_image(
@@ -492,14 +845,28 @@ async def preview_medical_image(
 
     try:
         encrypted_bytes = load_encrypted_object(image.file_path)
-        decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
     except Exception as e:
-        logger.warning(f"Decryption failed during preview for image ID {image.id}: {e}")
-        # Missing/undecryptable stored object is a missing resource, not a
-        # silent success — return an honest error the UI can render.
+        logger.warning(f"Encrypted object missing for image ID {image.id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Stored encrypted object is unavailable for this image",
+            detail="Stored encrypted object is missing from storage for this image",
+        ) from e
+
+    try:
+        decrypted_bytes = decrypt_image(encrypted_bytes, image.original_hash, image.encryption_key_metadata)
+    except Exception as e:
+        # An AES-GCM authentication failure is a DIFFERENT real condition from a
+        # missing object: the ciphertext exists but cannot be authenticated under
+        # the current encryption key (e.g. the platform master key was rotated
+        # after this scan was stored). Reporting it as "missing" would hide the
+        # true state, so the actual failure class is returned instead.
+        logger.error(f"Decryption failed for image ID {image.id}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "Stored ciphertext cannot be authenticated with the current platform key "
+                f"({type(e).__name__}). The encrypted object exists but its integrity cannot be verified."
+            ),
         ) from e
 
     # 7. Continuous Integrity Verification on every access
@@ -1408,6 +1775,445 @@ async def recover_image_endpoint(
         logger.error(f"Region-level self-recovery failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Self-recovery execution failed: {str(e)}")
 
+
+# ---------------------------------------------------------------------------
+# PATIENT COMPARISON SUBMISSION
+#
+# A patient may submit a CURRENT version of their own study so it can be
+# compared against the Doctor-registered TRUSTED BASELINE. The baseline is
+# never mutated: the comparison is stored as a new immutable ``ImageVersion``
+# row, never written back to ``MedicalImage.file_path``, ``original_hash``,
+# the Digital Integrity Twin, or the original blockchain registration.
+#
+# The real crypto pipeline (preprocess -> 4D Chen + AES-256-GCM -> SHA-3) and
+# the real AI forensic pipeline are reused verbatim; nothing here fabricates a
+# hash, artifact, score or verdict.
+# ---------------------------------------------------------------------------
+
+def _comparison_authorization(db: Session, image: MedicalImage, current_user: User) -> PatientProfile:
+    """Owner-or-clinical-staff guard shared by every comparison endpoint."""
+    patient = db.query(PatientProfile).filter(PatientProfile.id == image.patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient profile not found")
+
+    if current_user.role == "super_admin":
+        return patient
+    if patient.user_id == current_user.id:
+        return patient
+    same_hospital_staff = (
+        current_user.role in {"doctor", "radiologist", "hospital_admin"}
+        and bool(current_user.hospital_id)
+        and bool(image.hospital_id)
+        and current_user.hospital_id == image.hospital_id
+    )
+    if same_hospital_staff:
+        return patient
+    try:
+        authorize_image_action(db, current_user, image, "view", purpose="COMPARISON_REVIEW")
+    except HTTPException:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied: You are not authorized to compare this study",
+        )
+    return patient
+
+
+def _comparison_artifact_paths(version_number: int, image_id: int) -> dict:
+    """Comparison artifacts are namespaced per version so the Doctor baseline
+    artifacts (``heatmap_img_{id}.png``) are never overwritten.
+
+    The AI pipeline derives the mask filename from the heatmap filename and
+    writes both into the same directory, so the mask path is resolved in the
+    heatmap directory here as well.
+    """
+    suffix = f"{image_id}_v{version_number}"
+    heatmap_dir = STORAGE_DIR / "heatmaps"
+    return {
+        "heatmap": heatmap_dir / f"heatmap_img_{suffix}.png",
+        "mask": heatmap_dir / f"mask_img_{suffix}.png",
+        "srm": STORAGE_DIR / "srm" / f"srm_img_{suffix}.png",
+    }
+
+
+@router.post("/{image_id}/compare")
+async def submit_comparison_scan(
+    image_id: int,
+    file: UploadFile = File(...),
+    note: Optional[str] = Form(None),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Store a patient-supplied CURRENT version of an existing study and return the
+    REAL integrity comparison against the Doctor-registered trusted baseline.
+
+    The baseline image, its SHA-3, its Digital Integrity Twin and its original
+    provenance are left completely untouched.
+    """
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+
+    _comparison_authorization(db, image, current_user)
+
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="Empty file is not allowed")
+    if len(contents) > settings.max_image_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large (Max {settings.max_image_bytes} bytes)",
+        )
+    _validate_standard_upload(file, contents)
+
+    # 1. Real preprocessing (same module the clinical upload path uses)
+    try:
+        preprocessed_bytes, quality_score, entropy = preprocess_medical_image(contents)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Image preprocessing failed: {str(e)}")
+
+    # 2. Real 4D Chen permutation + AES-256-GCM encryption + SHA-3
+    encrypted_bytes, current_hash, metadata_json = encrypt_image(preprocessed_bytes, entropy)
+    ciphertext_hash = sha3_hash(encrypted_bytes)
+
+    # 3. Store the comparison ciphertext as its own object (baseline untouched)
+    filename = _safe_upload_filename(file.filename, "cmp", image.patient_id)
+    stored = store_encrypted_object(encrypted_bytes, filename)
+
+    # 4. Persist as an immutable ImageVersion chained to the baseline
+    baseline_version = ensure_image_version(db=db, image=image)
+    latest = (
+        db.query(ImageVersion)
+        .filter(ImageVersion.image_id == image.id)
+        .order_by(ImageVersion.version_number.desc())
+        .first()
+    )
+    comparison_version = ImageVersion(
+        image_id=image.id,
+        version_number=(latest.version_number + 1) if latest else 2,
+        parent_version_id=baseline_version.id,
+        content_type=(file.content_type or "application/octet-stream")[:128],
+        original_filename=(file.filename or "comparison")[:255],
+        storage_provider=stored.provider,
+        storage_reference=stored.reference,
+        plaintext_hash=current_hash,
+        ciphertext_hash=ciphertext_hash,
+        metadata_hash=sha3_hash(metadata_json.encode("utf-8")),
+        encryption_metadata_json=metadata_json,
+        integrity_status="COMPARISON_SUBMITTED",
+        blockchain_reference=None,
+        uploaded_by_id=current_user.id,
+    )
+    db.add(comparison_version)
+    db.flush()
+    db.refresh(comparison_version)
+
+    # 5. REAL baseline vs current comparison (no mutation of the baseline)
+    twin = get_digital_twin(db, image.id)
+    baseline_hash = (twin.trusted_hash if twin and twin.trusted_hash else image.original_hash) or None
+    hash_match = (current_hash == baseline_hash) if baseline_hash else None
+
+    # 6. Real AI forensic pipeline on the COMPARISON pixels only
+    artifacts: dict = {}
+    ai_result = None
+    try:
+        from app.ai_model import run_ai_tamper_pipeline
+
+        paths = _comparison_artifact_paths(comparison_version.version_number, image.id)
+        paths["heatmap"].parent.mkdir(parents=True, exist_ok=True)
+        paths["srm"].parent.mkdir(parents=True, exist_ok=True)
+
+        # The pipeline derives the mask filename from the heatmap filename
+        # (heatmap_img_* -> mask_img_*), so the versioned name namespaces both.
+        ai_result = run_ai_tamper_pipeline(
+            image_bytes=preprocessed_bytes,
+            output_filename=paths["heatmap"].name,
+        )
+        paths["mask"] = paths["heatmap"].parent / (
+            paths["heatmap"].name.replace("heatmap_img_", "mask_img_")
+        )
+
+        # SRM residual returns raw PNG bytes; persist them for the comparison.
+        try:
+            srm_bytes = extract_srm_residual(preprocessed_bytes)
+            paths["srm"].write_bytes(srm_bytes)
+        except Exception as srm_exc:
+            logger.warning(f"Comparison SRM residual failed for image {image.id}: {srm_exc}")
+
+        for key, path in paths.items():
+            artifacts[key] = str(path) if path.exists() else None
+    except Exception as ai_exc:
+        logger.error(f"Comparison AI pipeline failed for image {image.id}: {ai_exc}")
+
+    # 7. Real risk / trust on the genuine mismatch signal
+    risk_breakdown = calculate_tamper_risk_score(
+        ai_confidence=float((ai_result or {}).get("confidence_score", 0.0) or 0.0),
+        tampered_pixel_pct=float((ai_result or {}).get("tampered_percentage", 0.0) or 0.0),
+        sha3_mismatch=bool(hash_match is False),
+    )
+    risk_score = float(risk_breakdown["total_tamper_risk_score"])
+    trust_breakdown = calculate_cybersecurity_trust_score(
+        integrity_verified=(hash_match is not False),
+        blockchain_verified=True,
+        access_valid=True,
+        risk_score=risk_score,
+        is_quarantined=bool(image.quarantine_status),
+    )
+    trust_score = float(trust_breakdown["cybersecurity_trust_score"])
+
+    db.add(
+        TamperRiskLog(
+            image_id=image.id,
+            user_id=current_user.id,
+            risk_score=risk_score,
+            risk_category=risk_breakdown["category"],
+            trust_score=trust_score,
+            trust_level=trust_breakdown["trust_level"],
+            access_decision="ACTION_ALLOW",
+            breakdown_json=json.dumps(
+                {"risk": risk_breakdown, "trust": trust_breakdown}
+            ),
+        )
+    )
+    record_integrity_event(
+        db=db,
+        image=image,
+        event_type="PATIENT_COMPARISON",
+        status="MATCH" if hash_match else "MISMATCH",
+        details={
+            "version_number": comparison_version.version_number,
+            "baseline_sha3": baseline_hash,
+            "current_sha3": current_hash,
+            "hash_match": hash_match,
+            "note": note,
+        },
+        actor_user_id=current_user.id,
+    )
+    if ai_result:
+        record_ai_inference(
+            db=db,
+            image=image,
+            ai_result=ai_result,
+            requested_by_id=current_user.id,
+            status="COMPLETED",
+        )
+
+    # 8. Record the comparison on the audit ledger (never the original record)
+    blockchain_service.record_verification(
+        db,
+        image.id,
+        "COMPARISON_SUBMITTED",
+        {
+            "user_id": current_user.id,
+            "version_number": comparison_version.version_number,
+            "hash_match": hash_match,
+        },
+    )
+    db.commit()
+
+    return {
+        "image_id": image.id,
+        "version_number": comparison_version.version_number,
+        "version_id": comparison_version.id,
+        "storage_reference": comparison_version.storage_reference,
+        "storage_provider": comparison_version.storage_provider,
+        "baseline_sha3": baseline_hash,
+        "current_sha3": current_hash,
+        "hash_match": hash_match,
+        "integrity_status": comparison_version.integrity_status,
+        "dit_status": twin.verification_status if twin else None,
+        "risk_score": risk_score,
+        "risk_category": risk_breakdown["category"],
+        "trust_score": trust_score,
+        "trust_level": trust_breakdown["trust_level"],
+        "forensic_result": ai_result,
+        "artifacts": {
+            "srm": bool(artifacts.get("srm")),
+            "mask": bool(artifacts.get("mask")),
+            "gradcam": bool(artifacts.get("heatmap")),
+        },
+    }
+
+
+@router.get("/{image_id}/security-timeline")
+async def get_security_timeline(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Ordered security timeline built from real persisted records only.
+
+    Sources, in the order they are produced by the platform:
+      * ``image_versions``  — baseline creation / recovery / comparison submission
+      * ``integrity_events``— real SHA-3 verification results per version
+      * ``blockchain_transactions`` — ledger records carrying this image id
+      * ``recovery_records``— region-level recovery executions
+    No timestamp or event is synthesised: every entry is a row that exists in the
+    database, and stages with no recorded row are simply absent.
+    """
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+    _comparison_authorization(db, image, current_user)
+
+    version_ids = [
+        v.id
+        for v in db.query(ImageVersion).filter(ImageVersion.image_id == image_id).all()
+    ]
+
+    entries: list[dict] = []
+
+    def add(ts, stage, detail, status=None):
+        if not ts:
+            return
+        entries.append(
+            {
+                "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
+                "stage": stage,
+                "detail": detail,
+                "status": status,
+            }
+        )
+
+    # 1. Version lifecycle: baseline, recovery, patient comparison
+    for v in (
+        db.query(ImageVersion)
+        .filter(ImageVersion.image_id == image_id)
+        .order_by(ImageVersion.version_number.asc())
+        .all()
+    ):
+        add(
+            v.created_at,
+            "Baseline encrypted & stored (v1)" if v.version_number == 1 else f"Version v{v.version_number} stored",
+            f"plaintext SHA-3 {(v.plaintext_hash or '')[:16]}…",
+            v.integrity_status,
+        )
+        if v.verified_at:
+            add(v.verified_at, f"Version v{v.version_number} verified", "SHA-3 re-verification", "VERIFIED")
+
+    # 2. Real integrity events, joined through their version
+    if version_ids:
+        for ev in (
+            db.query(IntegrityEvent)
+            .filter(IntegrityEvent.image_version_id.in_(version_ids))
+            .order_by(IntegrityEvent.created_at.asc())
+            .all()
+        ):
+            add(
+                ev.created_at,
+                ev.event_type.replace("_", " ").title(),
+                None,
+                ev.status,
+            )
+
+    # 3. Ledger records that reference this image
+    for tx in (
+        db.query(BlockchainTransaction)
+        .filter(BlockchainTransaction.payload.like(f'%"image_id": {image_id}%'))
+        .order_by(BlockchainTransaction.timestamp.asc())
+        .limit(200)
+        .all()
+    ):
+        add(
+            tx.timestamp,
+            f"Ledger record: {tx.type}",
+            f"block #{tx.block_index} · tx {(tx.transaction_hash or '')[:16]}…",
+            tx.type,
+        )
+
+    # 4. Recovery executions
+    for rec in (
+        db.query(RecoveryRecord)
+        .filter(RecoveryRecord.image_id == image_id)
+        .order_by(RecoveryRecord.timestamp.asc())
+        .all()
+    ):
+        add(
+            rec.timestamp,
+            "Self-recovery executed",
+            f"{rec.tampered_roi_count} ROI(s) replaced from the trusted archive",
+            "VERIFIED" if rec.verification_passed else "FAILED",
+        )
+
+    entries.sort(key=lambda e: e["timestamp"])
+    return {
+        "image_id": image_id,
+        "blockchain_mode": "Local Blockchain Audit Simulation",
+        "entry_count": len(entries),
+        "timeline": entries,
+    }
+
+
+@router.get("/{image_id}/compare")
+async def get_comparison_state(
+    image_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the real comparison history for a study (immutable versions)."""
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+    _comparison_authorization(db, image, current_user)
+
+    twin = get_digital_twin(db, image.id)
+    baseline_hash = (twin.trusted_hash if twin and twin.trusted_hash else image.original_hash) or None
+
+    versions = (
+        db.query(ImageVersion)
+        .filter(ImageVersion.image_id == image.id)
+        .order_by(ImageVersion.version_number.asc())
+        .all()
+    )
+    return {
+        "image_id": image.id,
+        "baseline_sha3": baseline_hash,
+        "dit_status": twin.verification_status if twin else None,
+        "versions": [
+            {
+                "version_id": v.id,
+                "version_number": v.version_number,
+                "integrity_status": v.integrity_status,
+                "plaintext_hash": v.plaintext_hash,
+                "hash_match": (v.plaintext_hash == baseline_hash) if baseline_hash else None,
+                "storage_provider": v.storage_provider,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+                "uploaded_by_id": v.uploaded_by_id,
+            }
+            for v in versions
+        ],
+    }
+
+
+@router.get("/{image_id}/compare/{version_number}/artifact/{kind}")
+async def get_comparison_artifact(
+    image_id: int,
+    version_number: int,
+    kind: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve a real forensic artifact generated for a comparison version."""
+    if kind not in {"srm", "mask", "gradcam"}:
+        raise HTTPException(status_code=400, detail="Unknown artifact kind")
+
+    image = db.query(MedicalImage).filter(MedicalImage.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Medical image not found")
+    _comparison_authorization(db, image, current_user)
+
+    paths = _comparison_artifact_paths(version_number, image.id)
+    path = {"srm": paths["srm"], "mask": paths["mask"], "gradcam": paths["heatmap"]}[kind]
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Not generated by backend for this comparison version",
+        )
+    return FileResponse(str(path), media_type="image/png")
+
+
 @router.get("/recovery-records", response_model=RecoveryRecordListResponse)
 async def get_recovery_records(
     image_id: Optional[int] = Query(None, description="Filter by image ID"),
@@ -1662,6 +2468,7 @@ async def get_image_integrity_evidence(
     file_size_bytes = None
     current_hash = None
     hash_match = None
+    preview_unavailable_reason = None
 
     try:
         encrypted_bytes = load_encrypted_object(image.file_path)
@@ -1681,10 +2488,20 @@ async def get_image_integrity_evidence(
                 original_dimensions = [w, h]
         except Exception:
             pass
-    except Exception:
-        # File cannot be decrypted (e.g. tampered or inaccessible)
+    except FileNotFoundError:
+        # The encrypted object itself is absent from storage.
         current_hash = None
         hash_match = False if image.quarantine_status else None
+        preview_unavailable_reason = "Stored encrypted object is missing from storage for this image"
+    except Exception as exc:
+        # The object exists but cannot be decrypted/authenticated (e.g. key
+        # rotation). This is reported truthfully instead of being conflated with
+        # a missing file.
+        current_hash = None
+        hash_match = False if image.quarantine_status else None
+        preview_unavailable_reason = (
+            f"Stored ciphertext cannot be authenticated with the current platform key ({type(exc).__name__})"
+        )
 
     # Persist this real SHA-3 recompute outcome (integrity_events write path)
     record_integrity_event(
@@ -2035,6 +2852,7 @@ async def get_image_integrity_evidence(
         verification_status = "PENDING"
 
     return {
+        "preview_unavailable_reason": preview_unavailable_reason,
         "image_id": image.id,
         "image_name": image.title,
         "image_type": image.image_type,

@@ -375,6 +375,11 @@ class IntegrityEvidenceResponse(BaseModel):
     hash_match: Optional[bool] = None
     verification_status: str
     verification_timestamp: Optional[str] = None
+    # Why a preview/decrypt is unavailable, in the backend's own words.
+    # "Stored encrypted object is missing" vs "ciphertext cannot be
+    # authenticated with the current platform key" are different real states and
+    # are never conflated.
+    preview_unavailable_reason: Optional[str] = None
 
     # Digital Integrity Twin Evidence
     digital_integrity_twin: Optional[Dict[str, Any]] = None

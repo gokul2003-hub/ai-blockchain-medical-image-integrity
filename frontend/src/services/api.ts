@@ -83,7 +83,12 @@ export async function fetchProtectedBlobUrl(endpointUrl: string): Promise<string
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to load protected media (${response.status}: ${response.statusText})`);
+    let detail = response.statusText;
+    try {
+      const json = await response.json();
+      if (json.detail) detail = json.detail;
+    } catch { /* ignore non-JSON errors */ }
+    throw new Error(detail);
   }
 
   const blob = await response.blob();
@@ -148,6 +153,26 @@ export const apiService = {
     return res.data;
   },
 
+  // Fast-accept upload: returns as soon as the study is stored and the
+  // forensic job is queued. AI forensics run in the Celery worker.
+  async uploadAsync(formData: FormData) {
+    const res = await apiClient.post("/api/images/upload-async", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  },
+
+  // Real backend job status (stage + stage-based progress).
+  async getProcessingStatus(imageId: number) {
+    const res = await apiClient.get(`/api/images/${imageId}/processing-status`);
+    return res.data;
+  },
+
+  async retryAnalysis(imageId: number) {
+    const res = await apiClient.post(`/api/images/${imageId}/retry-analysis`);
+    return res.data;
+  },
+
   async uploadStandardImage(formData: FormData) {
     const res = await apiClient.post("/api/images/upload", formData, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -171,6 +196,27 @@ export const apiService = {
 
   async getDigitalTwin(imageId: number) {
     const res = await apiClient.get(`/api/images/digital-twin/${imageId}`);
+    return res.data;
+  },
+
+  // Patient comparison submission: stores a NEW immutable ImageVersion of an
+  // existing study and returns the real baseline-vs-current comparison plus the
+  // real forensic verdict. Never overwrites the Doctor-registered baseline.
+  async submitComparisonScan(imageId: number, formData: FormData) {
+    const res = await apiClient.post(`/api/images/${imageId}/compare`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res.data;
+  },
+
+  async getComparisonState(imageId: number) {
+    const res = await apiClient.get(`/api/images/${imageId}/compare`);
+    return res.data;
+  },
+
+  // Ordered security timeline assembled from real persisted rows only.
+  async getSecurityTimeline(imageId: number) {
+    const res = await apiClient.get(`/api/images/${imageId}/security-timeline`);
     return res.data;
   },
 

@@ -478,6 +478,10 @@ export const QuadViewport: React.FC<QuadViewportProps> = ({
                 {regionList.length > 8 && <div>…and {regionList.length - 8} more</div>}
               </div>
             </>
+          ) : evidenceStatus === "ok" ? (
+            <span className="text-emerald-600 dark:text-emerald-400">
+              ✓ No suspicious region detected — backend returned no flagged regions for this image
+            </span>
           ) : (
             <span>Not available — backend returned no region data for this image</span>
           )}
