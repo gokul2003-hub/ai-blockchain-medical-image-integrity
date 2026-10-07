@@ -30,7 +30,7 @@ if "%OMP_NUM_THREADS%"=="" set "OMP_NUM_THREADS=2"
 if "%MKL_NUM_THREADS%"=="" set "MKL_NUM_THREADS=2"
 if "%OPENBLAS_NUM_THREADS%"=="" set "OPENBLAS_NUM_THREADS=2"
 if "%NUMEXPR_NUM_THREADS%"=="" set "NUMEXPR_NUM_THREADS=2"
-echo [MediSecure] Worker thread budget : %OMP_NUM_THREADS% (API keeps the rest)
+echo [MediSecure] Worker thread budget : %OMP_NUM_THREADS% - the API keeps the rest
 
 REM 1) Show the broker the project actually uses.
 echo [MediSecure] Reading Celery broker from backend\app\config.py ...
@@ -40,7 +40,7 @@ REM 2) Probe it with the SAME helper the API uses (bounded TCP connect).
 venv\Scripts\python -c "import sys; from app.celery_worker import broker_reachable; sys.exit(0 if broker_reachable() else 1)"
 if errorlevel 1 goto :brokerdown
 
-echo [MediSecure] Starting Celery worker (prefetch=1, acks_late, concurrency 1)
+echo [MediSecure] Starting Celery worker - prefetch=1, acks_late, concurrency 1
 REM Run the worker BELOW_NORMAL priority so an in-flight forensic job never
 REM starves the API process handling the doctor's upload.
 start "MediSecure Worker" /low "%~dp0start_worker_run.bat"

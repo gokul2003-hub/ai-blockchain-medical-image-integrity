@@ -44,7 +44,7 @@ if not errorlevel 1 (
   goto :done
 )
 
-echo [MediSecure] Starting portable Redis 8.10.2 (in-memory, no persistence) ...
+echo [MediSecure] Starting portable Redis 8.10.2 - in-memory, no persistence ...
 start "MediSecure Redis" /min "%REDIS_DIR%\redis-server.exe" --port %RPORT% --bind %RHOST% --save "" --appendonly no
 
 REM Wait (max ~10s) for it to accept connections.
