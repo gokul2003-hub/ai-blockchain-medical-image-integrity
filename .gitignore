@@ -2,10 +2,19 @@
 .tools/
 
 # Runtime secrets and data
+# .env and friends are never committed; .env.example (safe placeholders) is kept.
+.env
+.env.*
+!.env.example
 backend/.dev-secrets.json
+.dev-secrets.json
 *.db
 *.db-journal
 *.bak.db
+backend/venv/
+venv/
+backend/.pytest_cache/
+.pytest_cache/
 
 # Runtime artifacts
 backend/storage/
@@ -17,4 +26,10 @@ backend/blockchain_compaction_report.json
 **/__pycache__/
 *.pyc
 node_modules/
+frontend/dist/
 *.log
+
+# Local archives - never part of the source tree
+*.zip
+*.tar.gz
+*.rar
