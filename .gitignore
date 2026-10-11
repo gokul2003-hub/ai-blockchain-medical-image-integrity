@@ -8,6 +8,10 @@
 !.env.example
 backend/.dev-secrets.json
 .dev-secrets.json
+*.pem
+*.key
+id_rsa
+id_rsa.pub
 *.db
 *.db-journal
 *.bak.db

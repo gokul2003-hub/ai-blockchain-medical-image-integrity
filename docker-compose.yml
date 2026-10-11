@@ -29,8 +29,8 @@ services:
       dockerfile: Dockerfile
     container_name: medchain_api
     environment:
-      - APP_ENV=${APP_ENV:-development}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/medical_sharing}
+      - APP_ENV=${APP_ENV:?APP_ENV must be set explicitly to development, staging or production}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/${DB_NAME:-medical_sharing}}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
@@ -55,8 +55,8 @@ services:
     container_name: medchain_celery
     command: celery -A app.celery_worker.celery_app worker --loglevel=info
     environment:
-      - APP_ENV=${APP_ENV:-development}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@db:5432/medical_sharing}
+      - APP_ENV=${APP_ENV:?APP_ENV must be set explicitly to development, staging or production}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${DB_USER:?DB_USER must be set}:${DB_PASSWORD:?DB_PASSWORD must be set}@db:5432/${DB_NAME:-medical_sharing}}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - JWT_SECRET=${JWT_SECRET}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
