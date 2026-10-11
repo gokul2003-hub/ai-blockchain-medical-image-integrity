@@ -44,7 +44,13 @@ type MediaStatus = "loading" | "ok" | "error";
 interface IntegrityEvidenceLite {
   risk_score?: number | null;
   trust_score?: number | null;
-  risk_and_trust?: { risk_category?: string | null; trust_level?: string | null } | null;
+  risk_and_trust?: {
+    risk_category?: string | null;
+    trust_level?: string | null;
+    // Produced by routes/images.py alongside risk_category and trust_level.
+    // ACTION_ALLOW when trust_score >= 50, otherwise ACTION_QUARANTINE.
+    access_decision?: string | null;
+  } | null;
   affected_regions?: BoundingBox[] | null;
   ai_forensics?: { bounding_boxes?: BoundingBox[] | null } | null;
   tamper_percentage?: number | null;
