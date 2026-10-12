@@ -40,6 +40,11 @@ from app.risk_engine import calculate_tamper_risk_score, calculate_cybersecurity
 from app.access_policy import evaluate_risk_adaptive_access, ACTION_ALLOW, ACTION_REQUIRE_ZKP, ACTION_QUARANTINE
 from app.recovery import recover_compromised_image
 from app.ai_model import extract_srm_residual, localize_tampering
+from app.artifact_provenance import (
+    ArtifactProvenanceError,
+    bind_generated_artifacts,
+    provenance_is_valid,
+)
 from app.authorization import authorize_image_action, authorize_emergency_access, write_audit
 from app.versioning import (
     ensure_image_version,
@@ -1642,8 +1647,15 @@ async def get_heatmap_image(
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for heatmap")
 
     heatmap_filename = f"heatmap_img_{image.id}.png"
+    mask_filename = f"mask_img_{image.id}.png"
     path = STORAGE_DIR / "heatmaps" / heatmap_filename
-    if not path.exists():
+    # Serve only an artifact whose recorded provenance matches this image's
+    # identity AND its content hash. A stale file from an image that reused this
+    # id has no matching provenance, so it is regenerated from this study's own
+    # bytes rather than served.
+    if not path.exists() or not provenance_is_valid(
+        path, kind="heatmap", image_id=image.id, original_hash=image.original_hash
+    ):
         # Generate heatmap dynamically
         try:
             encrypted_bytes = load_encrypted_object(image.file_path)
@@ -1652,9 +1664,25 @@ async def get_heatmap_image(
             except Exception:
                 decrypted_bytes = encrypted_bytes
             localize_tampering(decrypted_bytes, heatmap_filename)
+            # Bind heatmap AND mask together: localize_tampering writes both.
+            bind_generated_artifacts(
+                image, heatmap_filename=heatmap_filename, mask_filename=mask_filename
+            )
+        except ArtifactProvenanceError:
+            # Fail closed: artifacts were removed, so nothing unverified remains.
+            logger.error(f"Artifact provenance could not be recorded for image {image_id}")
+            raise HTTPException(status_code=500, detail="Heatmap unavailable")
+        except ValueError as e:
+            # Stored bytes are not a decodable medical image: a data problem,
+            # reported as 422 rather than an internal server error.
+            logger.warning(f"Heatmap unavailable for image {image_id}: {e}")
+            raise HTTPException(
+                status_code=422,
+                detail="Heatmap unavailable: image data is not a decodable medical image",
+            )
         except Exception as e:
             logger.error(f"Failed to auto-generate heatmap: {e}")
-            raise HTTPException(status_code=500, detail=f"Heatmap generation failed: {e}")
+            raise HTTPException(status_code=500, detail="Heatmap generation failed")
 
     if not path.exists():
         raise HTTPException(status_code=404, detail="Heatmap image not found")
@@ -1692,8 +1720,13 @@ async def get_localization_mask_image(
                 if not blockchain_service.check_smart_contract_permission(db, image.patient_id, current_user.id, current_user.hospital_id or 0):
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access Denied: View permission required for localization mask")
 
-    mask_path = STORAGE_DIR / "heatmaps" / f"mask_img_{image.id}.png"
-    if not mask_path.exists():
+    mask_filename = f"mask_img_{image.id}.png"
+    mask_path = STORAGE_DIR / "heatmaps" / mask_filename
+    # Same rule as the heatmap route: provenance must match this image's id and
+    # content hash, otherwise the stale file is regenerated from this study.
+    if not mask_path.exists() or not provenance_is_valid(
+        mask_path, kind="mask", image_id=image.id, original_hash=image.original_hash
+    ):
         # Generate mask (and heatmap) via the existing AI pipeline
         try:
             encrypted_bytes = load_encrypted_object(image.file_path)
@@ -1702,9 +1735,27 @@ async def get_localization_mask_image(
             except Exception:
                 decrypted_bytes = encrypted_bytes
             localize_tampering(decrypted_bytes, f"heatmap_img_{image.id}.png")
+            # Bind both artifacts in the same success path so requesting the
+            # mask never leaves the heatmap unbound (and vice versa).
+            bind_generated_artifacts(
+                image,
+                heatmap_filename=f"heatmap_img_{image.id}.png",
+                mask_filename=mask_filename,
+            )
+        except ArtifactProvenanceError:
+            logger.error(f"Artifact provenance could not be recorded for image {image_id}")
+            raise HTTPException(status_code=500, detail="Localization mask unavailable")
+        except ValueError as e:
+            # Stored bytes are not a decodable medical image: a data problem,
+            # reported as 422 rather than an internal server error.
+            logger.warning(f"Localization mask unavailable for image {image_id}: {e}")
+            raise HTTPException(
+                status_code=422,
+                detail="Localization mask unavailable: image data is not a decodable medical image",
+            )
         except Exception as e:
             logger.error(f"Failed to auto-generate localization mask: {e}")
-            raise HTTPException(status_code=500, detail=f"Mask generation failed: {e}")
+            raise HTTPException(status_code=500, detail="Mask generation failed")
 
     if not mask_path.exists():
         raise HTTPException(status_code=404, detail="Localization mask image not found")
@@ -2363,9 +2414,18 @@ async def get_srm_residual_image(
     try:
         srm_png = extract_srm_residual(decrypted_bytes)
         return Response(content=srm_png, media_type="image/png")
+    except ValueError as e:
+        # The stored bytes are not a decodable medical image. That is a data
+        # problem, not a server fault, so it is reported as 422 and lets the
+        # client tell "no artifact for this image" apart from a real 500.
+        logger.warning(f"SRM residual unavailable for image {image_id}: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail="SRM residual unavailable: image data is not a decodable medical image",
+        )
     except Exception as e:
         logger.error(f"Failed to generate SRM residual: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"SRM residual extraction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="SRM residual extraction failed")
 
 @router.get("/digital-twin/{image_id}")
 async def get_digital_twin_endpoint(
@@ -2967,10 +3027,61 @@ async def get_image_risk_trust(
 
     if latest_risk_log:
         return {
+            "image_id": image_id,
+            "analysis_status": "COMPLETED",
             "risk_score": latest_risk_log.risk_score,
             "trust_score": latest_risk_log.trust_score,
             "tamper_detected": tamper_detected,
             "source": "persisted",
+        }
+
+    # ---- Analysis status -------------------------------------------------
+    # Distinguishes "never analysed" from "analysed and measured low risk".
+    # Without this, an image that never went through the AI pipeline was scored
+    # from zeroed defaults below and reported as risk 0.0 (LOW) / trust 75.0
+    # (GUARDED) -- a measured-looking verdict that no analysis supports.
+    inference_jobs = (
+        db.query(AIInference)
+        .join(ImageVersion, AIInference.image_version_id == ImageVersion.id)
+        .filter(ImageVersion.image_id == image.id)
+        .order_by(AIInference.created_at.desc())
+        .all()
+    )
+    latest_job = inference_jobs[0] if inference_jobs else None
+
+    if latest_risk_log is not None:
+        analysis_status = "COMPLETED"
+    elif latest_job is None:
+        analysis_status = "NOT_ANALYZED"
+    elif latest_job.status == "COMPLETED":
+        analysis_status = "COMPLETED"
+    elif latest_job.status == "FAILED":
+        analysis_status = "FAILED"
+    else:  # QUEUED / any pipeline stage
+        analysis_status = "IN_PROGRESS"
+
+    # A completed job without a persisted TamperRiskLog still carries real model
+    # output, so scoring it is legitimate. Anything else has no evidence at all
+    # and must not be scored: zero is missing data, not a low risk.
+    analysis_evidence = latest_risk_log is not None or (
+        latest_job is not None and latest_job.status == "COMPLETED"
+    )
+
+    if not analysis_evidence:
+        return {
+            "image_id": image_id,
+            "analysis_status": analysis_status,
+            "risk_score": None,
+            "risk_level": None,
+            "trust_score": None,
+            "trust_level": None,
+            "tamper_detected": tamper_detected,
+            "integrity_verified": hash_match is True,
+            "source": "unavailable",
+            "message": (
+                "No valid AI analysis exists for this image, so no tamper-risk or "
+                "trust score is reported."
+            ),
         }
 
     # No persisted evaluation for this image: compute it from the real state.
@@ -3015,6 +3126,8 @@ async def get_image_risk_trust(
     )
 
     return {
+        "image_id": image_id,
+        "analysis_status": analysis_status,
         "risk_score": risk_score,
         "trust_score": trust_calc["cybersecurity_trust_score"],
         "tamper_detected": tamper_detected,

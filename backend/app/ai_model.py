@@ -567,10 +567,25 @@ def extract_tamper_regions(
 # 4. Evaluation Metrics (Quantitative Assessment Infrastructure)
 # ===========================================================================
 
+def _round4(value: float | None) -> float | None:
+    """Round a metric to 4dp, preserving None as an explicit 'undefined'."""
+    return None if value is None else round(value, 4)
+
+
 def calculate_segmentation_metrics(pred_mask: np.ndarray, gt_mask: np.ndarray) -> dict:
     """
-    Calculates Dice (F1), IoU (Jaccard), Precision, Recall, Pixel Accuracy, MCC, and ROC-AUC.
+    Calculates Dice (F1), IoU (Jaccard), Precision, Recall, Pixel Accuracy, MCC,
+    ROC-AUC, PR-AUC (Average Precision) and False-Positive Rate.
     Inputs are 2D binary or probability numpy arrays.
+
+    Ranking metrics (ROC-AUC, PR-AUC) are computed from the RAW values supplied
+    as ``pred_mask`` rather than its thresholded form, so they are proper
+    ranking metrics when a probability/confidence map is supplied. When a hard
+    binary mask is supplied they are still computed, but every prediction ties
+    and the ranking is degenerate -- treat those numbers with caution.
+
+    Undefined metrics are returned as ``None`` and named in
+    ``undefined_metrics`` rather than being substituted with a fake 1.0/0.0.
 
     NOTE: Metrics reflect performance on SYNTHETIC benchmark data only.
     """
@@ -593,35 +608,65 @@ def calculate_segmentation_metrics(pred_mask: np.ndarray, gt_mask: np.ndarray) -
     mcc_denom = float(np.sqrt(float(tp + fp) * float(tp + fn) * float(tn + fp) * float(tn + fn)))
     mcc = float(tp * tn - fp * fn) / mcc_denom if mcc_denom > 0 else 0.0
 
-    # ROC-AUC using trapezoidal integration
-    y_true = gt.flatten()
-    y_scores = pred_mask.flatten()
+    # False Positive Rate = FP / (FP + TN).
+    # Zero-denominator behaviour: when the ground truth has no negative pixels
+    # at all the denominator is 0, FPR is genuinely undefined, and None is
+    # returned instead of a fabricated 0.0 or 1.0.
+    false_positive_rate = float(fp / (fp + tn)) if (fp + tn) > 0 else None
 
-    desc_indices = np.argsort(y_scores, kind="mergesort")[::-1]
-    y_scores = y_scores[desc_indices]
-    y_true = y_true[desc_indices]
+    # Ranking-based metrics, computed from the RAW pred_mask values.
+    y_true = gt.flatten().astype(np.float64)
+    y_scores = pred_mask.flatten().astype(np.float64)
 
-    tp_sum = np.cumsum(y_true)
-    fp_sum = np.cumsum(1 - y_true)
-    total_pos = tp_sum[-1] if len(tp_sum) > 0 else 0
-    total_neg = fp_sum[-1] if len(fp_sum) > 0 else 0
+    total_pos = int(np.sum(y_true))
+    total_neg = int(len(y_true) - total_pos)
 
-    if total_pos == 0 or total_neg == 0:
-        roc_auc = 1.0
-    else:
-        tpr = tp_sum / total_pos
-        fpr = fp_sum / total_neg
-        roc_auc = float(np.trapz(tpr, fpr))
+    roc_auc: float | None = None
+    pr_auc: float | None = None
+
+    if len(y_scores) > 0 and total_pos > 0 and total_neg > 0:
+        # Stable descending ranking (mergesort reversed) -- identical ordering
+        # to the historical implementation so computed values do not drift.
+        desc_indices = np.argsort(y_scores, kind="mergesort")[::-1]
+        ranked_true = y_true[desc_indices]
+
+        tp_curve = np.cumsum(ranked_true)
+        fp_curve = np.cumsum(1.0 - ranked_true)
+
+        # ROC-AUC via trapezoidal integration of TPR against FPR.
+        tpr = tp_curve / total_pos
+        fpr_curve = fp_curve / total_neg
+        roc_auc = float(np.trapz(tpr, fpr_curve))
+
+        # PR-AUC as Average Precision: the standard step-wise integral of the
+        # precision-recall curve, summing precision at each POSITIVE position
+        # only, then normalising by the number of positives. Defined only when
+        # positives exist.
+        precision_curve = tp_curve / np.maximum(tp_curve + fp_curve, 1e-12)
+        pr_auc = float(np.sum(ranked_true * precision_curve) / total_pos)
+
+    undefined_metrics = [
+        name
+        for name, value in (
+            ("roc_auc", roc_auc),
+            ("pr_auc", pr_auc),
+            ("false_positive_rate", false_positive_rate),
+        )
+        if value is None
+    ]
 
     return {
-        "dice": round(dice, 4),
-        "iou": round(iou, 4),
-        "precision": round(precision, 4),
-        "recall": round(recall, 4),
-        "f1_score": round(dice, 4),
-        "pixel_accuracy": round(pixel_accuracy, 4),
-        "mcc": round(mcc, 4),
-        "roc_auc": round(roc_auc, 4),
+        "dice": _round4(dice),
+        "iou": _round4(iou),
+        "precision": _round4(precision),
+        "recall": _round4(recall),
+        "f1_score": _round4(dice),
+        "pixel_accuracy": _round4(pixel_accuracy),
+        "mcc": _round4(mcc),
+        "roc_auc": _round4(roc_auc),
+        "pr_auc": _round4(pr_auc),
+        "false_positive_rate": _round4(false_positive_rate),
+        "undefined_metrics": undefined_metrics,
         "confusion_matrix": {
             "tp": tp,
             "fp": fp,

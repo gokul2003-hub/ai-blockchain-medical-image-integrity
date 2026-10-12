@@ -168,6 +168,22 @@ def process_medical_image_pipeline(image_id: int, inference_id: str):
 
         ai_res = run_ai_tamper_pipeline(image_bytes, f"heatmap_img_{image_id}.png")
 
+        # Record durable provenance for BOTH artifacts in the same success path
+        # that produced them. Failure removes them so no unbound artifact can be
+        # served as this study's forensic result.
+        from app.artifact_provenance import ArtifactProvenanceError, bind_generated_artifacts
+
+        try:
+            bind_generated_artifacts(
+                image,
+                heatmap_filename=ai_res.get("heatmap_filename") or f"heatmap_img_{image_id}.png",
+                mask_filename=ai_res.get("mask_filename") or f"mask_img_{image_id}.png",
+                job_id=job.id,
+            )
+        except ArtifactProvenanceError:
+            logger.error(f"Artifact provenance unavailable for image {image_id}; artifacts removed")
+            raise
+
         set_stage("FORENSIC_ANALYSIS")
         srm_reference = None
         try:
@@ -239,6 +255,11 @@ def process_medical_image_pipeline(image_id: int, inference_id: str):
         )
         job.status = "COMPLETED"
         job.completed_at = _dt.datetime.now(_dt.timezone.utc)
+        # Clear any stale enqueue/transport error (e.g. "Worker broker
+        # unavailable") recorded before the job ran. This happens in the SAME
+        # transaction as the COMPLETED transition, so a job can only shed an
+        # error message by actually succeeding -- a FAILED job keeps its error.
+        job.error_message = None
         db.commit()
         logger.info(
             f"process_medical_image_pipeline COMPLETED image={image_id} "
